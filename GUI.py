@@ -30,34 +30,64 @@ from src.plotting_utils import (
 
 
 # -------------------------
-# SETTINGS
+# CONSTANTS
 # -------------------------
+CHANNELS = ["TRITC", "FITC", "DAPI"]
+CH_IDX = {"TRITC": 0, "FITC": 1, "DAPI": 2}
+OVERLAY_CHANNELS = ["FITC", "TRITC"]
+OVERLAY_COLORS = {"FITC": [0, 255, 0], "TRITC": [255, 0, 0]}
+LINE_COLORS = {"FITC": "#2ca02c", "TRITC": "#d62728"}
+TISSUES = ["Epidermis", "Exodermis", "Endodermis", "Cortex", "Vascular"]
 
+RAW = "Raw intensity"
+NORM = "Normalized intensity"
+
+# Always use prediction masks in the lab version
+MASK_SOURCE = "Prediction (.npy)"
+
+
+# -------------------------
+# PAGE + SIDEBAR (one-time setup)
+# -------------------------
 st.set_page_config(layout="wide")
 
-st.sidebar.markdown("## Input folders")
-
-data_dir_input = st.sidebar.text_input(
-    "Image folder",
-    "data",
-    key="data_dir",
-    help=(
-        "Folder containing one subfolder per sample, each with its "
-        "TRITC/FITC/DAPI TIFF files. Defaults to the 'data' folder next "
-        "to this app — copy your images there, or type a full path."
-    ),
+_paths_ok = (
+    Path(st.session_state.get("data_dir", "data")).exists()
+    and Path(st.session_state.get("model_dir", "model")).exists()
 )
 
-model_dir_input = st.sidebar.text_input(
-    "Model checkpoint file or folder",
-    "model",
-    key="model_dir",
-    help=(
-        "Defaults to the bundled 'model' folder next to this app "
-        "(contains the trained RADIX checkpoint). Only change this if "
-        "you were given a different checkpoint."
-    ),
-)
+with st.sidebar.expander("Setup (folders)", expanded=not _paths_ok):
+    data_dir_input = st.text_input(
+        "Image folder",
+        "data",
+        key="data_dir",
+        help=(
+            "Folder containing one subfolder per sample, each with its "
+            "TRITC/FITC/DAPI TIFF files. Defaults to the 'data' folder next "
+            "to this app — copy your images there, or type a full path."
+        ),
+    )
+
+    model_dir_input = st.text_input(
+        "Model checkpoint file or folder",
+        "model",
+        key="model_dir",
+        help=(
+            "Defaults to the bundled 'model' folder next to this app "
+            "(contains the trained RADIX checkpoint). Only change this if "
+            "you were given a different checkpoint."
+        ),
+    )
+
+    pred_dir_override = st.text_input(
+        "Prediction folder (leave blank for auto)",
+        "",
+        key="pred_dir_override",
+        help=(
+            "By default predictions are saved to <image_folder>/../ml/predictions/. "
+            "Set this only if your predictions are stored somewhere else."
+        ),
+    )
 
 DATA_DIR = Path(data_dir_input)
 EXP_DIR = DATA_DIR.parent
@@ -65,52 +95,344 @@ ML_DIR = EXP_DIR / "ml"
 PRED_DIR = ML_DIR / "predictions"
 MODEL_DIR = Path(model_dir_input)
 
-pred_dir_override = st.sidebar.text_input(
-    "Prediction folder (leave blank for auto)",
-    "",
-    key="pred_dir_override",
-    help=(
-        "By default predictions are saved to <image_folder>/../ml/predictions/. "
-        "Set this only if your predictions are stored somewhere else."
-    ),
-)
-
 if pred_dir_override.strip():
     PRED_DIR = Path(pred_dir_override.strip())
-
-# Always use prediction masks in the lab version
-mask_source = "Prediction (.npy)"
 
 if not data_dir_input.strip() or not model_dir_input.strip():
     st.info("Please enter a data folder and model checkpoint/folder to begin.")
     st.stop()
 
-CHANNELS = ["TRITC", "FITC", "DAPI"]
-OVERLAY_CHANNELS = ["FITC", "TRITC"]
-OVERLAY_COLORS = {"FITC": [0, 255, 0], "TRITC": [255, 0, 0]}
-
-st.sidebar.markdown("### Derived paths")
-st.sidebar.caption(f"ML folder: `{ML_DIR}`")
-st.sidebar.caption(f"Prediction folder: `{PRED_DIR}`")
-
-st.sidebar.markdown("### Folder checks")
 st.sidebar.write("Data folder:", "✅" if DATA_DIR.exists() else "❌")
 st.sidebar.write("Model path:", "✅" if MODEL_DIR.exists() else "❌")
-st.sidebar.write("Prediction folder:", "✅" if PRED_DIR.exists() else "⚠️ run segmentation first")
+st.sidebar.write("Predictions:", "✅" if PRED_DIR.exists() else "⚠️ run segmentation first")
+st.sidebar.caption(f"Prediction folder: `{PRED_DIR}`")
 
 st.title("RADIX")
 
+samples = sorted(p.stem for p in PRED_DIR.glob("*.npy")) if PRED_DIR.exists() else []
+
 
 # -------------------------
-# Segmentation inference
-# Rendered before the "no predictions yet" check below so it's reachable
-# even on a brand-new dataset with zero predictions.
+# HELPERS
 # -------------------------
-with st.expander("Segmentation inference", expanded=False):
+@st.cache_resource(show_spinner=False, max_entries=12)
+def load_sample_cached(sample_name, data_dir, pred_dir):
+    """Cached so moving a threshold slider doesn't re-read TIFFs from disk."""
+    return load_sample(sample_name, Path(data_dir), Path(pred_dir), CHANNELS)
+
+
+def _mode_suffix(mode):
+    return "raw" if mode == RAW else "norm"
+
+
+def _key(tissue, ch, mode):
+    return f"{tissue.lower()}_{ch.lower()}_{_mode_suffix(mode)}"
+
+
+def _default_range(mode):
+    return (600, 65535) if mode == RAW else (15, 100)
+
+
+def _bounds(mode):
+    return (0, 65535) if mode == RAW else (0, 100)
+
+
+def _thr_store():
+    """Persistent threshold values (slider widgets only exist for the visible tissue)."""
+    return st.session_state.setdefault("thr_store", {})
+
+
+def _set_threshold(tissue, ch, mode, lo, hi):
+    k = _key(tissue, ch, mode)
+    _thr_store()[k] = (lo, hi)
+    # Drop widget state so the slider re-seeds from the store on next render
+    for suffix in ("_range", "_min", "_max"):
+        st.session_state.pop(k + suffix, None)
+
+
+def threshold_slider(tissue, ch, mode):
+    k = _key(tissue, ch, mode)
+    lo, hi = _thr_store().get(k, _default_range(mode))
+    if f"{k}_range" not in st.session_state:
+        st.session_state[f"{k}_range"] = (lo, hi)
+        st.session_state[f"{k}_min"] = lo
+        st.session_state[f"{k}_max"] = hi
+
+    mn, mx = _bounds(mode)
+    if mode == RAW:
+        label, step = f"{ch} raw threshold", 10
+    else:
+        label, step = f"{ch} normalized threshold (%)", 1
+
+    lo, hi = range_slider_with_boxes(label, mn, mx, _default_range(mode), step=step, key=k)
+    _thr_store()[k] = (lo, hi)
+    return lo, hi
+
+
+def build_threshold_dict(mode):
+    """{(tissue, channel): (lo, hi)} in the units the measurement code expects."""
+    out = {}
+    for tissue in BARRIER_TISSUES:
+        for ch in OVERLAY_CHANNELS:
+            lo, hi = _thr_store().get(_key(tissue, ch, mode), _default_range(mode))
+            if mode == NORM:
+                lo, hi = lo / 100, hi / 100
+            out[(tissue, ch)] = (lo, hi)
+    return out
+
+
+# --- slider-button callbacks (run before widgets are re-created) ---
+def cb_reset(tissue, mode):
+    for ch in OVERLAY_CHANNELS:
+        _set_threshold(tissue, ch, mode, *_default_range(mode))
+
+
+def cb_copy_to_all(tissue, mode):
+    for ch in OVERLAY_CHANNELS:
+        lo, hi = _thr_store().get(_key(tissue, ch, mode), _default_range(mode))
+        for t in BARRIER_TISSUES:
+            _set_threshold(t, ch, mode, lo, hi)
+
+
+def cb_apply_suggestion(pcol, scope, tissue):
+    df = st.session_state.get("threshold_suggestions_df")
+    if df is None or df.empty:
+        return
+    for _, row in df.iterrows():
+        if scope == "tissue" and row["Tissue"] != tissue:
+            continue
+        lo = int(round(float(row[pcol]) / 10.0) * 10)
+        lo = max(0, min(lo, 65535))
+        _set_threshold(row["Tissue"], row["Channel"], RAW, lo, 65535)
+
+
+def cb_step_sample(delta):
+    cur = st.session_state.get("sample_selectbox")
+    if cur in samples:
+        i = samples.index(cur) + delta
+        st.session_state["sample_selectbox"] = samples[max(0, min(i, len(samples) - 1))]
+
+
+def tissue_mask(bio7, tissue):
+    mask = bio7[tissue] > 0
+    if tissue == "Cortex":
+        mask = mask & ~(bio7["Aerenchyma"] > 0)
+    return mask
+
+
+def compute_views(raw, bio7, region, mode, thr, auto_crop):
+    """Build preview images + threshold masks for one sample/tissue."""
+    mask = tissue_mask(bio7, region)
+    default = (0, 65535) if mode == RAW else (0.0, 1.0)
+
+    rgb = to_uint8(normalize_percentile_rgb(raw))
+    overlays, thr_only, ch_vals, pct = {}, {}, {}, {}
+
+    for ch in OVERLAY_CHANNELS:
+        img = raw[..., CH_IDX[ch]].astype(np.float32)
+        vals = img if mode == RAW else normalize_channel(img)
+        lo, hi = thr.get((region, ch), default)
+
+        wall = mask & (vals >= lo) & (vals <= hi)
+        ch_vals[ch] = vals[mask]
+        n_mask = int(mask.sum())
+        pct[ch] = (100.0 * int(wall.sum()) / n_mask) if n_mask else 0.0
+
+        ov = rgb.copy()
+        ov[wall] = OVERLAY_COLORS[ch]
+        overlays[ch] = ov
+
+        t = np.zeros_like(rgb)
+        t[wall] = [255, 255, 255]
+        thr_only[ch] = t
+
+    if auto_crop and mask.any():
+        _, (y0, y1, x0, x1) = crop_to_mask(rgb, mask)
+        rgb = rgb[y0:y1, x0:x1]
+        overlays = {c: v[y0:y1, x0:x1] for c, v in overlays.items()}
+        thr_only = {c: v[y0:y1, x0:x1] for c, v in thr_only.items()}
+
+    return {
+        "rgb": rgb,
+        "overlays": overlays,
+        "thr_only": thr_only,
+        "ch_vals": ch_vals,
+        "pct": pct,
+    }
+
+
+def density_figure(vals, mode, ch, region, lo, hi, sugg_row=None):
+    """KDE of tissue intensities with the current threshold range marked."""
+    import plotly.graph_objects as go
+    from scipy.stats import gaussian_kde
+
+    vals = vals[np.isfinite(vals)]
+    log_x = mode == RAW
+    if log_x:
+        vals = vals[vals > 0]
+    if vals.size < 2 or vals.min() == vals.max():
+        return None
+    if vals.size > 50000:
+        vals = np.random.default_rng(0).choice(vals, 50000, replace=False)
+
+    try:
+        kde = gaussian_kde(vals)
+    except Exception:
+        return None
+    x_vals = np.linspace(vals.min(), vals.max(), 400)
+    y_vals = kde(x_vals)
+
+    is_dark = st.get_option("theme.base") == "dark"
+    template = "plotly_dark" if is_dark else "plotly_white"
+    ref_color = "rgba(255,255,255,0.6)" if is_dark else "rgba(0,0,0,0.6)"
+    color = LINE_COLORS[ch]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode="lines", fill="tozeroy",
+                             name="Density", line=dict(color=color)))
+
+    def _vline(x, label, line_color, width, dash=None, y_label=1.0, size=11, angle=0):
+        # Draw as a shape + separate annotation. add_vline(annotation_text=...)
+        # is avoided: on a log axis Plotly puts annotations in log10 units but
+        # shapes in data units, so labels land at 10^x and blow up the axis range.
+        if not np.isfinite(x) or (log_x and x <= 0):
+            return
+        fig.add_shape(type="line", x0=x, x1=x, y0=0, y1=1, yref="paper",
+                      line=dict(color=line_color, width=width, dash=dash))
+        fig.add_annotation(x=np.log10(x) if log_x else x, y=y_label, yref="paper",
+                           text=label, showarrow=False, yanchor="bottom" if angle == 0 else "top",
+                           font=dict(size=size, color=line_color), textangle=angle)
+
+    if sugg_row is not None:
+        for col in sugg_row.index:
+            if col.startswith("p") and col[1:].isdigit():
+                try:
+                    _vline(float(sugg_row[col]), col, ref_color, 1, dash="dot",
+                           y_label=0.98, size=9, angle=-90)
+                except Exception:
+                    pass
+
+    for x, label in ((lo, "min"), (hi, "max")):
+        _vline(x, label, color, 2)
+
+    # Keep the axis on the data, so far-away lines (e.g. max=65535) can't stretch it
+    xr = (np.log10(vals.min()), np.log10(vals.max())) if log_x else (vals.min(), vals.max())
+    pad = 0.05 * (xr[1] - xr[0])
+    fig.update_xaxes(range=[xr[0] - pad, xr[1] + pad])
+
+    fig.update_layout(
+        template=template,
+        title=dict(text=f"{ch} — {region}", font=dict(size=13)),
+        xaxis_title="Raw intensity" if log_x else "Normalized intensity",
+        xaxis_type="log" if log_x else "linear",
+        yaxis_title="Density",
+        height=260,
+        margin=dict(l=10, r=10, t=40, b=10),
+        showlegend=False,
+    )
+    return fig
+
+
+@st.fragment
+def suggestions_panel(region, threshold_mode):
+    """Percentile-suggestion controls.
+
+    A fragment, so the slow all-samples scan only reruns this block — the
+    preview and spot-check elsewhere on the page don't grey out while it runs.
+    Anything that changes state used outside the fragment (the suggestions
+    table feeding the density plots, the slider values) ends with a full-app
+    rerun.
+    """
+    st.caption("Scans every sample to suggest raw-intensity thresholds per tissue/channel.")
+
+    if st.button("Compute suggestions from all images"):
+        st.session_state.pop("sugg_msg", None)
+        with st.spinner("Scanning all samples for intensity statistics..."):
+            suggestions_df = compute_threshold_percentile_suggestions(
+                samples, DATA_DIR, PRED_DIR, CHANNELS,
+                mask_source=MASK_SOURCE, gt_mask_dir=None,
+            )
+        errors = getattr(suggestions_df, "_errors", [])
+
+        if suggestions_df.empty:
+            st.session_state["sugg_msg"] = (
+                "error",
+                "No valid samples found. Make sure prediction .npy files "
+                f"exist in: {PRED_DIR}",
+                errors,
+            )
+        else:
+            if errors:
+                st.session_state["sugg_msg"] = (
+                    "warning",
+                    f"{len(errors)} sample(s) failed to load and were skipped.",
+                    errors,
+                )
+            st.session_state["threshold_suggestions_df"] = suggestions_df
+            st.rerun()  # full-app rerun so the density plots pick up the new lines
+
+    msg = st.session_state.get("sugg_msg")
+    if msg:
+        kind, text, errors = msg
+        (st.error if kind == "error" else st.warning)(text)
+        if errors:
+            with st.expander(f"Show errors ({len(errors)})"):
+                for e in errors[:20]:
+                    st.caption(e)
+
+    sugg_df = st.session_state.get("threshold_suggestions_df")
+    if sugg_df is None or sugg_df.empty:
+        return
+
+    st.dataframe(sugg_df, hide_index=True)
+
+    pcols = [c for c in sugg_df.columns if c.startswith("p") and c[1:].isdigit()]
+    if threshold_mode != RAW:
+        st.caption("Switch to *Raw intensity* mode to apply suggestions.")
+    elif pcols:
+        pcol = st.selectbox(
+            "Use as minimum threshold", pcols,
+            index=min(2, len(pcols) - 1), key="apply_pcol",
+        )
+        a1, a2 = st.columns(2)
+        # Plain buttons + st.rerun (not on_click): the sliders live outside this
+        # fragment, so they only refresh on a full rerun.
+        with a1:
+            if st.button("Apply to this tissue", width="stretch"):
+                cb_apply_suggestion(pcol, "tissue", region)
+                st.rerun()
+        with a2:
+            if st.button("Apply to all", width="stretch"):
+                cb_apply_suggestion(pcol, "all", region)
+                st.rerun()
+
+
+# -------------------------
+# TABS
+# -------------------------
+tab_seg, tab_tune, tab_batch = st.tabs(
+    ["1 · Segmentation", "2 · Threshold tuning", "3 · Batch & export"]
+)
+
+
+# =========================
+# TAB 1: SEGMENTATION
+# =========================
+with tab_seg:
     st.markdown("### Run segmentation model")
     st.caption(
-        "Runs predict.py on raw per-sample folders and saves full-size predictions for downstream RootLensX analysis."
+        "Runs predict.py on raw per-sample folders and saves full-size predictions "
+        "for downstream RootLensX analysis."
     )
+
+    flash = st.session_state.pop("seg_flash", None)
+    if flash:
+        st.success(flash)
+
+    if samples:
+        st.caption(f"{len(samples)} prediction file(s) already found in `{PRED_DIR}`.")
+    else:
+        st.warning("No predictions found yet — run segmentation to get started.")
 
     seg_input_dir = str(DATA_DIR)
     seg_model_dir = str(MODEL_DIR)
@@ -128,7 +450,7 @@ with st.expander("Segmentation inference", expanded=False):
         key="seg_save_vis",
     )
 
-    run_segmentation = st.button("Run segmentation")
+    run_segmentation = st.button("Run segmentation", type="primary")
 
     if run_segmentation:
         if not Path(seg_input_dir).exists():
@@ -193,125 +515,220 @@ with st.expander("Segmentation inference", expanded=False):
             return_code = process.wait()
 
             if return_code == 0:
-                st.success("Segmentation finished.")
-                st.info(f"Prediction folder: {seg_pred_dir}")
+                load_sample_cached.clear()  # predictions changed on disk
+                st.session_state["seg_flash"] = (
+                    f"Segmentation finished. Predictions saved to {seg_pred_dir}. "
+                    "Continue to the Threshold tuning tab."
+                )
                 st.rerun()
             else:
                 st.error("Segmentation failed.")
                 st.code("\n".join(logs) if logs else "(no output captured)")
 
 
-# -------------------------
-# UI
-# -------------------------
-samples = sorted(p.stem for p in PRED_DIR.glob("*.npy")) if PRED_DIR.exists() else []
+# =========================
+# TAB 2: THRESHOLD TUNING
+# =========================
+threshold_mode = st.session_state.get("threshold_mode", RAW)
 
-if not samples:
-    st.error(
-        f"No prediction files found in: {PRED_DIR}\n\n"
-        "Run segmentation first using the **Segmentation inference** panel above, "
-        "or check that the prediction folder path is correct."
-    )
-    st.stop()
-
-
-control_col, preview_col = st.columns([1, 1.4])
-
-with preview_col:
-    st.markdown("### Sample selection")
-
-    if samples:
-        # Initialize session state keys
-        if "sample_index" not in st.session_state:
-            st.session_state.sample_index = 0
-        
-        # Check if we are in "Random Preview" mode
-        is_preview_mode = "preview_samples" in st.session_state and st.session_state["preview_samples"]
-        current_list = st.session_state["preview_samples"] if is_preview_mode else samples
-
-        # Reset button to exit random preview
-        if is_preview_mode:
-            if st.button("Clear Random Preview (Show All Samples)"):
-                del st.session_state["preview_samples"]
-                st.session_state.sample_index = 0
-                st.rerun()
-
-        # Ensure index is within bounds of the current list
-        st.session_state.sample_index = max(0, min(st.session_state.sample_index, len(current_list) - 1))
-
-        sample = st.selectbox(
-            "Sample",
-            current_list,
-            index=st.session_state.sample_index,
-            key="sample_selectbox",
-            label_visibility="collapsed",
+with tab_tune:
+    if not samples:
+        st.info(
+            f"No prediction files found in `{PRED_DIR}`. Run segmentation in the "
+            "first tab, or check the prediction folder path in the sidebar."
         )
-        st.session_state.sample_index = current_list.index(sample)
-        st.caption(f"Viewing {st.session_state.sample_index + 1} / {len(current_list)} samples" + (" (Random Subset)" if is_preview_mode else ""))
     else:
-        sample = None
-        st.info("No prediction masks found yet. Run segmentation first.")
+        if st.session_state.get("sample_selectbox") not in samples:
+            st.session_state["sample_selectbox"] = samples[0]
 
-    # Tissue selection — FITC and TRITC overlays are always shown side by side
-    region = st.selectbox(
-        "Tissue",
-        ["Epidermis", "Exodermis", "Endodermis", "Cortex", "Vascular"],
-        key="region_select",
+        left, right = st.columns([1, 2.2], gap="large")
+
+        # ---------- LEFT: all controls ----------
+        with left:
+            with st.container(border=True):
+                st.markdown("##### Sample")
+                c_prev, c_sel, c_next = st.columns([1, 5, 1])
+                with c_prev:
+                    st.button("◀", key="prev_sample", on_click=cb_step_sample, args=(-1,),
+                              width="stretch")
+                with c_next:
+                    st.button("▶", key="next_sample", on_click=cb_step_sample, args=(1,),
+                              width="stretch")
+                with c_sel:
+                    sample = st.selectbox(
+                        "Sample", samples, key="sample_selectbox",
+                        label_visibility="collapsed",
+                    )
+                st.caption(f"Sample {samples.index(sample) + 1} / {len(samples)}")
+
+            with st.container(border=True):
+                st.markdown("##### Tissue & thresholds")
+                region = st.radio("Tissue", TISSUES, key="region_select", horizontal=True)
+
+                threshold_mode = st.radio(
+                    "Threshold mode",
+                    [RAW, NORM],
+                    key="threshold_mode",
+                    horizontal=True,
+                    help=(
+                        "Positive-pixel masks are generated from either raw or normalized "
+                        "images; intensities are always measured on raw data."
+                    ),
+                )
+
+                for ch in OVERLAY_CHANNELS:
+                    threshold_slider(region, ch, threshold_mode)
+
+                b1, b2 = st.columns(2)
+                with b1:
+                    st.button("Reset tissue", on_click=cb_reset,
+                              args=(region, threshold_mode), width="stretch")
+                with b2:
+                    st.button("Copy to all tissues", on_click=cb_copy_to_all,
+                              args=(region, threshold_mode), width="stretch",
+                              help="Apply this tissue's FITC/TRITC ranges to every tissue.")
+
+                st.caption(
+                    "Thresholds for other tissues are kept when you switch tissue — "
+                    "see the summary in the *Batch & export* tab."
+                )
+
+            with st.expander("Percentile suggestions"):
+                suggestions_panel(region, threshold_mode)
+
+            with st.container(border=True):
+                st.markdown("##### Random spot-check")
+                n_spot = st.number_input(
+                    "Number of random samples",
+                    min_value=1, max_value=max(1, len(samples)),
+                    value=min(4, max(1, len(samples))), step=1,
+                )
+                s1, s2 = st.columns(2)
+                with s1:
+                    if st.button("Draw samples", width="stretch"):
+                        rng = np.random.default_rng()
+                        st.session_state["spot_samples"] = rng.choice(
+                            samples, size=min(int(n_spot), len(samples)), replace=False
+                        ).tolist()
+                with s2:
+                    if st.button("Clear", width="stretch"):
+                        st.session_state.pop("spot_samples", None)
+
+        thr = build_threshold_dict(threshold_mode)
+
+        # ---------- RIGHT: preview ----------
+        with right:
+            # View options: one row, one column per option, above the sample title
+            v1, v2, v3 = st.columns(3)
+            with v1:
+                auto_crop = st.checkbox("Auto-crop to selected tissue", value=True,
+                                        key="auto_crop_preview")
+            with v2:
+                show_masks = st.checkbox("Show threshold-only masks", value=False,
+                                         key="show_threshold_only")
+            with v3:
+                show_hist = st.checkbox("Show intensity distributions", value=True,
+                                        key="show_intensity_hist")
+
+            try:
+                raw, bio7 = load_sample_cached(sample, str(DATA_DIR), str(PRED_DIR))
+                views = compute_views(raw, bio7, region, threshold_mode, thr, auto_crop)
+            except Exception as e:
+                st.error(f"Could not load {sample}: {e}")
+                views = None
+
+            if views is not None:
+                st.subheader(f"{sample} — {region}")
+                col_raw, col_fitc, col_tritc = st.columns(3)
+                ch_cols = {"FITC": col_fitc, "TRITC": col_tritc}
+
+                with col_raw:
+                    st.image(views["rgb"], caption="Raw image", width="stretch")
+
+                sugg_df = st.session_state.get("threshold_suggestions_df")
+
+                for ch in OVERLAY_CHANNELS:
+                    lo, hi = thr[(region, ch)]
+                    with ch_cols[ch]:
+                        st.image(views["overlays"][ch], caption=f"{ch} overlay",
+                                 width="stretch")
+                        st.caption(f"{views['pct'][ch]:.1f}% of {region} pixels above threshold")
+
+                        if show_masks:
+                            st.image(views["thr_only"][ch], caption=f"{ch} threshold only",
+                                     width="stretch")
+
+                        if show_hist:
+                            sugg_row = None
+                            if sugg_df is not None and not sugg_df.empty and threshold_mode == RAW:
+                                match = sugg_df[(sugg_df["Tissue"] == region) &
+                                                (sugg_df["Channel"] == ch)]
+                                if len(match):
+                                    sugg_row = match.iloc[0]
+
+                            fig = density_figure(views["ch_vals"][ch], threshold_mode, ch,
+                                                 region, lo, hi, sugg_row)
+                            if fig is None:
+                                st.warning(f"No usable {ch} pixels for {region}.")
+                            else:
+                                st.plotly_chart(fig, width="stretch", key=f"hist_{ch}")
+
+        # ---------- FULL WIDTH: spot-check ----------
+        spot = [s for s in st.session_state.get("spot_samples", []) if s in samples]
+        if spot:
+            st.divider()
+            st.subheader(f"Random spot-check ({region}, current thresholds)")
+            for name in spot:
+                try:
+                    raw_i, bio7_i = load_sample_cached(name, str(DATA_DIR), str(PRED_DIR))
+                    v = compute_views(raw_i, bio7_i, region, threshold_mode, thr, auto_crop)
+                except Exception as e:
+                    st.warning(f"{name}: {e}")
+                    continue
+
+                st.markdown(f"**{name}**")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.image(v["rgb"], caption="Raw", width="stretch")
+                with c2:
+                    st.image(v["overlays"]["FITC"],
+                             caption=f"FITC overlay ({v['pct']['FITC']:.1f}%)", width="stretch")
+                with c3:
+                    st.image(v["overlays"]["TRITC"],
+                             caption=f"TRITC overlay ({v['pct']['TRITC']:.1f}%)", width="stretch")
+
+
+# =========================
+# TAB 3: BATCH & EXPORT
+# =========================
+with tab_batch:
+    st.markdown("### Barrier intensity quantification")
+    st.caption(
+        "Measures epidermis/exodermis/cortex/endodermis/vascular TRITC and FITC. "
+        "Positive-pixel masks are generated from either raw or normalized images "
+        "(depending on threshold mode); intensities are always measured on raw data."
     )
 
-    auto_crop = st.checkbox(
-        "Auto-crop previews to selected tissue",
-        value=True,
-        key="auto_crop_preview",
-    )
+    if not samples:
+        st.info("No predictions yet — run segmentation first.")
+    else:
+        batch_thr = build_threshold_dict(threshold_mode)
 
-with control_col:
-    with st.expander("Barrier intensity quantification", expanded=False):
-        st.markdown("### Barrier intensity quantification")
-        st.caption(
-            "Measures epidermis/exodermis/cortex/endodermis/vascular TRITC and FITC. "
-            "Positive-pixel masks are generated from either raw or normalized images "
-            "(depending on threshold mode); intensities are always measured on raw data."
+        st.markdown(f"**Thresholds that will be used** — mode: *{threshold_mode}*")
+        scale = 100 if threshold_mode == NORM else 1
+        unit = " (%)" if threshold_mode == NORM else ""
+        summary = pd.DataFrame(
+            [
+                {
+                    "Tissue": t,
+                    **{f"{ch} min{unit}": round(batch_thr[(t, ch)][0] * scale) for ch in OVERLAY_CHANNELS},
+                    **{f"{ch} max{unit}": round(batch_thr[(t, ch)][1] * scale) for ch in OVERLAY_CHANNELS},
+                }
+                for t in TISSUES
+            ]
         )
-
-        threshold_mode = st.radio(
-            "Threshold mode",
-            ["Raw intensity", "Normalized intensity"],
-            index=0,
-        )
-
-        threshold_dict = {}
-
-        for tissue in BARRIER_TISSUES:
-            for ch in ["FITC", "TRITC"]:
-                slug = f"{tissue.lower()}_{ch.lower()}"
-
-                if threshold_mode == "Raw intensity":
-                    lo, hi = range_slider_with_boxes(
-                        f"{tissue} {ch} raw threshold",
-                        0, 65535, (600, 65535), step=10,
-                        key=f"{slug}_raw",
-                    )
-                else:
-                    lo, hi = range_slider_with_boxes(
-                        f"{tissue} {ch} normalized threshold (%)",
-                        0, 100, (15, 100), step=1,
-                        key=f"{slug}_norm",
-                    )
-                    lo /= 100
-                    hi /= 100
-
-                threshold_dict[(tissue, ch)] = (lo, hi)
-
-        max_preview_samples = max(1, len(samples))
-
-        n_preview_samples = st.number_input(
-            "Number of random preview samples",
-            min_value=1,
-            max_value=max_preview_samples,
-            value=min(5, max_preview_samples),
-            step=1,
-        )
+        st.dataframe(summary, hide_index=True)
+        st.caption("Adjust these in the Threshold tuning tab (mode and ranges are shared).")
 
         include_thresholds_output = st.checkbox(
             "Include thresholds in output",
@@ -319,40 +736,34 @@ with control_col:
             key="include_thresholds_output",
         )
 
-        preview_random_thresholds = st.button("Preview random samples")
-        suggest_thresholds = st.button("Suggest thresholds from all images")
-        run_barrier_batch = st.button("Run barrier intensity batch")
+        run_barrier_batch = st.button(f"Run barrier intensity batch ({len(samples)} samples)",
+                                      type="primary")
 
         if run_barrier_batch:
-            st.write("Running barrier intensity batch...")
-
             batch_rows = []
-            peak_feature_rows = []
-
-            progress = st.progress(0)
+            progress = st.progress(0, text="Running barrier intensity batch...")
 
             for i, sample_name in enumerate(samples):
                 try:
-                    raw_i, bio7_pred_i = load_sample(sample_name, DATA_DIR, PRED_DIR, CHANNELS)
-                    bio7_i = bio7_pred_i
+                    raw_i, bio7_i = load_sample(sample_name, DATA_DIR, PRED_DIR, CHANNELS)
 
                     rows = measure_barrier_intensity_batch(
                         raw_i,
                         bio7_i,
                         threshold_mode,
-                        threshold_dict,
+                        batch_thr,
                     )
 
                     rows["Sample"] = sample_name
                     rows["Species"] = infer_species(sample_name)
-                    rows["Mask_source"] = mask_source
+                    rows["Mask_source"] = MASK_SOURCE
                     # Root geometry + tissue areas, incl. aerenchyma (pixel units)
                     rows.update(measure_root_morphometrics(bio7_i))
 
                     if include_thresholds_output:
                         rows["Threshold_mode"] = threshold_mode
 
-                        for (tissue_name, channel_name), (low_thr, high_thr) in threshold_dict.items():
+                        for (tissue_name, channel_name), (low_thr, high_thr) in batch_thr.items():
                             prefix = f"{tissue_name}_{channel_name}"
                             rows[f"{prefix}_threshold_min"] = low_thr
                             rows[f"{prefix}_threshold_max"] = high_thr
@@ -366,318 +777,26 @@ with control_col:
                         "Error": str(e),
                     })
 
-                progress.progress((i + 1) / len(samples))
+                progress.progress((i + 1) / len(samples),
+                                  text=f"Processed {i + 1} / {len(samples)}: {sample_name}")
 
-            barrier_df = pd.DataFrame(batch_rows)
-            st.session_state["barrier_batch_df"] = barrier_df
+            progress.empty()
+            st.session_state["barrier_batch_df"] = pd.DataFrame(batch_rows)
 
         if "barrier_batch_df" in st.session_state:
-            st.markdown("#### Barrier intensity batch results")
-            st.dataframe(st.session_state["barrier_batch_df"])
+            result_df = st.session_state["barrier_batch_df"]
+            st.markdown("#### Results")
 
-            csv = st.session_state["barrier_batch_df"].to_csv(index=False).encode("utf-8")
+            if "Error" in result_df.columns:
+                n_err = int(result_df["Error"].notna().sum())
+                if n_err:
+                    st.warning(f"{n_err} sample(s) failed — see the Error column.")
+
+            st.dataframe(result_df)
+
             st.download_button(
                 "Download barrier intensity CSV",
-                data=csv,
+                data=result_df.to_csv(index=False).encode("utf-8"),
                 file_name="barrier_intensity_results.csv",
                 mime="text/csv",
             )
-
-        if suggest_thresholds:
-            with st.spinner("Scanning all samples for intensity statistics..."):
-                suggestions_df = compute_threshold_percentile_suggestions(
-                    samples,
-                    DATA_DIR,
-                    PRED_DIR,
-                    CHANNELS,
-                    mask_source="Prediction (.npy)",
-                    gt_mask_dir=None,
-                )
-
-            if suggestions_df.empty:
-                errors = getattr(suggestions_df, "_errors", [])
-                if mask_source == "Prediction (.npy)":
-                    st.error(
-                        "No valid samples found. Make sure prediction .npy files exist "
-                        f"in: {PRED_DIR}"
-                    )
-                else:
-                    st.error(
-                        "No valid samples found. Make sure prediction .npy files exist "
-                        f"in: {PRED_DIR}"
-                    )
-                if errors:
-                    with st.expander(f"Show errors ({len(errors)})"):
-                        for e in errors[:20]:
-                            st.caption(e)
-            else:
-                errors = getattr(suggestions_df, "_errors", [])
-                if errors:
-                    st.warning(
-                        f"{len(errors)} sample(s) failed to load and were skipped."
-                    )
-                    with st.expander("Show skipped samples"):
-                        for e in errors[:20]:
-                            st.caption(e)
-                st.session_state["threshold_suggestions_df"] = suggestions_df
-
-        if "threshold_suggestions_df" in st.session_state:
-            st.markdown("#### Suggested raw-intensity thresholds")
-            st.dataframe(st.session_state["threshold_suggestions_df"])
-
-        if preview_random_thresholds:
-            rng = np.random.default_rng()
-            st.session_state["preview_samples"] = rng.choice(
-                samples,
-                size=min(int(n_preview_samples), len(samples)),
-                replace=False,
-            ).tolist()
-
-# -------------------------
-# PROCESS
-# -------------------------
-analysis_ready = sample is not None
-
-if not analysis_ready:
-    st.warning("No sample selected.")
-    st.stop()
-
-raw, bio7_pred = load_sample(sample, DATA_DIR, PRED_DIR, CHANNELS)
-bio7 = bio7_pred
-
-ch_idx = {"TRITC": 0, "FITC": 1, "DAPI": 2}
-
-mask = bio7[region] > 0
-if region == "Cortex":
-    mask = mask & ~(bio7["Aerenchyma"] > 0)
-
-_default_preview_range = (0, 65535) if threshold_mode == "Raw intensity" else (0.0, 1.0)
-
-# Wall masks for both channels — the live preview shows FITC and TRITC side by side
-ch_imgs_raw = {}
-wall_masks = {}
-for ch in OVERLAY_CHANNELS:
-    ch_img_raw = raw[..., ch_idx[ch]].astype(np.float32)
-    ch_img_norm = normalize_channel(ch_img_raw)
-    ch_imgs_raw[ch] = ch_img_raw
-
-    preview_min, preview_max = threshold_dict.get((region, ch), _default_preview_range)
-
-    if threshold_mode == "Raw intensity":
-        wall_masks[ch] = mask & (ch_img_raw >= preview_min) & (ch_img_raw <= preview_max)
-    else:
-        wall_masks[ch] = mask & (ch_img_norm >= preview_min) & (ch_img_norm <= preview_max)
-
-preview_samples = st.session_state.get("preview_samples", [])
-
-if len(preview_samples) > 0:
-    st.subheader("Random threshold preview")
-
-    for sample_name in preview_samples:
-        try:
-            raw_i, bio7_i = load_sample(
-                sample_name,
-                DATA_DIR,
-                PRED_DIR,
-                CHANNELS,
-            )
-
-            mask_i = bio7_i[region] > 0
-            if region == "Cortex":
-                mask_i = mask_i & ~(bio7_i["Aerenchyma"] > 0)
-
-            rgb_i = to_uint8(normalize_percentile_rgb(raw_i))
-            overlays_i = {}
-
-            for ch in OVERLAY_CHANNELS:
-                ch_img_raw_i = raw_i[..., ch_idx[ch]].astype(np.float32)
-                ch_img_norm_i = normalize_channel(ch_img_raw_i)
-
-                preview_min_i, preview_max_i = threshold_dict.get((region, ch), _default_preview_range)
-
-                if threshold_mode == "Raw intensity":
-                    wall_mask_i = mask_i & (ch_img_raw_i >= preview_min_i) & (ch_img_raw_i <= preview_max_i)
-                else:
-                    wall_mask_i = mask_i & (ch_img_norm_i >= preview_min_i) & (ch_img_norm_i <= preview_max_i)
-
-                overlay_i = rgb_i.copy()
-                overlay_i[wall_mask_i] = OVERLAY_COLORS[ch]
-                overlays_i[ch] = overlay_i
-
-            if auto_crop:
-                _, box_i = crop_to_mask(rgb_i, mask_i)
-                y0, y1, x0, x1 = box_i
-
-                rgb_i = rgb_i[y0:y1, x0:x1]
-                for ch in OVERLAY_CHANNELS:
-                    overlays_i[ch] = overlays_i[ch][y0:y1, x0:x1]
-
-            st.markdown(f"### {sample_name}")
-
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.image(rgb_i, caption="Raw", width="stretch")
-            with c2:
-                st.image(overlays_i["FITC"], caption="FITC overlay", width="stretch")
-            with c3:
-                st.image(overlays_i["TRITC"], caption="TRITC overlay", width="stretch")
-
-        except Exception as e:
-            st.warning(f"{sample_name}: {e}")
-
-
-rgb = to_uint8(normalize_percentile_rgb(raw))
-overlays = {}
-threshold_only = {}
-for ch in OVERLAY_CHANNELS:
-    overlay = rgb.copy()
-    overlay[wall_masks[ch]] = OVERLAY_COLORS[ch]
-    overlays[ch] = overlay
-
-    to_img = np.zeros_like(rgb)
-    to_img[wall_masks[ch]] = [255, 255, 255]
-    threshold_only[ch] = to_img
-
-if auto_crop:
-    _, crop_box = crop_to_mask(rgb, mask)
-    y0, y1, x0, x1 = crop_box
-
-    rgb_show = rgb[y0:y1, x0:x1]
-    overlay_show = {ch: overlays[ch][y0:y1, x0:x1] for ch in OVERLAY_CHANNELS}
-    threshold_only_show = {ch: threshold_only[ch][y0:y1, x0:x1] for ch in OVERLAY_CHANNELS}
-else:
-    rgb_show = rgb
-    overlay_show = overlays
-    threshold_only_show = threshold_only
-
-# -------------------------
-# VISUALIZATION
-# -------------------------
-
-with preview_col:
-    st.subheader("Live preview")
-
-    p1, p2, p3 = st.columns(3)
-
-    with p1:
-        st.image(
-            rgb_show,
-            caption="Raw image",
-            width="stretch",
-        )
-
-    with p2:
-        st.image(
-            overlay_show["FITC"],
-            caption="FITC overlay",
-            width="stretch",
-        )
-
-    with p3:
-        st.image(
-            overlay_show["TRITC"],
-            caption="TRITC overlay",
-            width="stretch",
-        )
-
-    q1, q2 = st.columns(2)
-
-    with q1:
-        st.image(
-            threshold_only_show["FITC"],
-            caption="FITC threshold only",
-            width="stretch",
-        )
-
-    with q2:
-        st.image(
-            threshold_only_show["TRITC"],
-            caption="TRITC threshold only",
-            width="stretch",
-        )
-
-    show_intensity_hist = st.checkbox(
-        "Show intensity distribution (density)",
-        value=False,
-        key="show_intensity_hist",
-    )
-
-    if show_intensity_hist:
-        import plotly.graph_objects as go
-        from scipy.stats import gaussian_kde
-
-        theme_base = st.get_option("theme.base")
-        is_dark = (theme_base == "dark")
-        template = "plotly_dark" if is_dark else "plotly_white"
-        line_color = "rgba(255,255,255,0.75)" if is_dark else "rgba(0,0,0,0.75)"
-
-        hist_cols = st.columns(2)
-
-        for hist_col, ch in zip(hist_cols, OVERLAY_CHANNELS):
-            with hist_col:
-                vals_hist = ch_imgs_raw[ch][mask]
-                vals_hist = vals_hist[np.isfinite(vals_hist)]
-
-                if vals_hist.size == 0:
-                    st.warning(f"No pixels found for selected tissue ({ch}).")
-                    continue
-
-                # Subsample if very large (for speed)
-                if vals_hist.size > 50000:
-                    vals_hist = np.random.choice(vals_hist, 50000, replace=False)
-
-                kde = gaussian_kde(vals_hist)
-                x_vals = np.linspace(vals_hist.min(), vals_hist.max(), 500)
-                y_vals = kde(x_vals)
-
-                fig = go.Figure()
-
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_vals,
-                        y=y_vals,
-                        mode="lines",
-                        name="Density",
-                        fill="tozeroy",
-                    )
-                )
-
-                fig.update_layout(
-                    template=template,
-                    title=f"{sample} — {region} {ch} intensity density",
-                    xaxis_title="Raw intensity",
-                    xaxis_type="log",
-                    yaxis_title="Density",
-                )
-
-                # Overlay percentile suggestions
-                if "threshold_suggestions_df" in st.session_state:
-                    sugg_df = st.session_state["threshold_suggestions_df"]
-
-                    match = sugg_df[
-                        (sugg_df["Tissue"] == region) &
-                        (sugg_df["Channel"] == ch)
-                    ]
-
-                    if len(match) > 0:
-                        row = match.iloc[0]
-
-                        for col in match.columns:
-                            if col.startswith("p"):
-                                try:
-                                    p_val = float(row[col])
-
-                                    fig.add_vline(
-                                        x=p_val,
-                                        line_dash="dash",
-                                        line_color=line_color,
-                                        line_width=1,
-                                        annotation_text=col,
-                                        annotation_position="top",
-                                        annotation_font_color=line_color,
-                                    )
-                                except Exception:
-                                    pass
-
-                st.plotly_chart(fig, width="stretch", key=f"hist_{ch}")
-
