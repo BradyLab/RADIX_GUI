@@ -145,13 +145,14 @@ def compute_threshold_percentile_suggestions(
             if not vals_all:
                 continue
 
+            n_samples = len(vals_all)  # one array per contributing sample
             vals_all = np.concatenate(vals_all)
 
             row = {
                 "Tissue": tissue,
                 "Channel": ch,
                 "N_pixels": int(vals_all.size),
-                "N_samples": len(vals_all),
+                "N_samples": n_samples,
             }
 
             for p in percentiles:
