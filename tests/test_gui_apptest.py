@@ -83,3 +83,20 @@ def test_percentile_suggestions_apply(at):
     lo, hi = store["epidermis_fitc_raw"]
     assert lo != 600 and hi == 65535
     assert at.slider(key="epidermis_fitc_raw_range").value == (lo, hi)
+
+
+def test_suggestions_report_skipped_samples(sample_data_dir):
+    """Load failures are surfaced via DataFrame.attrs (no pandas attribute warning)."""
+    import warnings
+    from pathlib import Path
+    from src.intensity_quant import compute_threshold_percentile_suggestions
+
+    root = Path(sample_data_dir)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # fail on any UserWarning
+        df = compute_threshold_percentile_suggestions(
+            ["Sample_01", "does_not_exist"], root, root.parent / "ml" / "predictions",
+            ["TRITC", "FITC", "DAPI"],
+        )
+    assert not df.empty
+    assert any("does_not_exist" in e for e in df.attrs["errors"])

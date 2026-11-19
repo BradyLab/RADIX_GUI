@@ -12,9 +12,18 @@ def open_app(page: Page, app_url: str, data_dir: str | None):
     page.goto(app_url)
     expect(page.get_by_role("heading", name="RADIX")).to_be_visible(timeout=LOAD_TIMEOUT)
     if data_dir:
+        # The sidebar "Setup" expander starts open when ./model or ./data is missing
+        # (e.g. on CI, where the gitignored model/ isn't checked out) and collapsed
+        # otherwise. Read its real <details open> state rather than guessing from
+        # the input's visibility: the open animation makes the input look hidden
+        # for ~1s, and clicking the header then would toggle it shut.
+        setup = page.locator('[data-testid="stSidebar"] details', has_text="Setup (folders)")
+        expect(setup).to_be_visible(timeout=LOAD_TIMEOUT)
+        if not setup.evaluate("d => d.open"):
+            setup.locator("summary").click()
+
         box = page.get_by_label("Image folder", exact=True)
-        if not box.is_visible():  # sidebar "Setup" expander may be collapsed
-            page.get_by_text("Setup (folders)").click()
+        expect(box).to_be_visible()  # waits for the open animation to finish
         box.fill(data_dir)
         box.press("Enter")
 

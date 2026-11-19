@@ -352,7 +352,7 @@ def suggestions_panel(region, threshold_mode):
                 samples, DATA_DIR, PRED_DIR, CHANNELS,
                 mask_source=MASK_SOURCE, gt_mask_dir=None,
             )
-        errors = getattr(suggestions_df, "_errors", [])
+        errors = suggestions_df.attrs.get("errors", [])
 
         if suggestions_df.empty:
             st.session_state["sugg_msg"] = (

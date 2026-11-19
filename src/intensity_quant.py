@@ -161,7 +161,7 @@ def compute_threshold_percentile_suggestions(
             rows.append(row)
 
     result = pd.DataFrame(rows)
-    result._errors = errors   # attach for caller inspection
+    result.attrs["errors"] = errors   # attach for caller inspection (DataFrame.attrs is the supported metadata dict)
     return result
 
 
