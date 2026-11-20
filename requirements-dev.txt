@@ -1,0 +1,5 @@
+# Test-only dependencies (not needed to run RADIX).
+-r requirements.txt
+-r requirements-lint.txt
+pytest
+pytest-playwright
