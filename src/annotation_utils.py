@@ -344,7 +344,7 @@ def polygons_to_raw_semantic_mask(
     sem = np.zeros((h, w), dtype=np.int32)
 
     # Collect polygons by annotation class
-    class_polys = {i: [] for i in range(6)}
+    class_polys: Dict[int, List[np.ndarray]] = {i: [] for i in range(6)}
     for ann in annotations:
         cid = ann["class_id"]
         if cid in class_polys:
@@ -395,7 +395,7 @@ def polygons_to_raw_binary_masks(
     Each mask is the union of all polygons for that class.
     """
     masks = {}
-    class_polys = {i: [] for i in range(6)}
+    class_polys: Dict[int, List[np.ndarray]] = {i: [] for i in range(6)}
     for ann in annotations:
         cid = ann["class_id"]
         if cid in class_polys:

@@ -71,9 +71,9 @@ def print_split_summary(split: Dict[str, List[SampleRecord]]) -> None:
     """Print summary statistics for a split."""
     for subset, samples in split.items():
         print(f"\n{subset.upper()}: {len(samples)} samples")
-        species_counts = defaultdict(int)
-        micro_counts = defaultdict(int)
-        exp_set = set()
+        species_counts: defaultdict[str, int] = defaultdict(int)
+        micro_counts: defaultdict[str, int] = defaultdict(int)
+        exp_set: set = set()
         for s in samples:
             species_counts[s.species] += 1
             micro_counts[s.microscope] += 1

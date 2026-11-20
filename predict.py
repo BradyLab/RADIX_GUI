@@ -17,8 +17,9 @@ import matplotlib.pyplot as plt
 
 from src.lightning_module import TimmSemanticModule
 from src.model_classes import (
+    BIO_7_COLORS_RGB,
+    BIO_7_NAMES,
     unet_semantic_to_bio7,
-    BIO_7_NAMES, BIO_7_COLORS_RGB,
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -71,7 +72,7 @@ def discover_samples(data_dir: Path):
         if not sub.is_dir() or sub.name.startswith("."):
             continue
 
-        all_tifs = []
+        all_tifs: list[Path] = []
         for ext in tif_exts:
             all_tifs.extend(sub.glob(ext))
 

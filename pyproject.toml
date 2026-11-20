@@ -38,3 +38,21 @@ omit = [
 fail_under = 45
 skip_covered = true
 show_missing = true
+
+[tool.mypy]
+python_version = "3.11"
+files = ["GUI.py", "predict.py", "src", "tests"]
+# These import torch / albumentations, which the slim type-check environment
+# (requirements-typecheck.txt) deliberately doesn't install.
+exclude = [
+    'src/lightning_module\.py',
+    'src/unet_dataset\.py',
+    'src/augmentation\.py',
+]
+# Several third-party packages ship no stubs (cellpose, plotly, ...).
+ignore_missing_imports = true
+# Report errors only for our own files, not for installed libraries.
+follow_imports = "silent"
+# Default mode: checks the bodies of *annotated* functions only. The codebase is
+# mostly unannotated, so this passes today and guards anything typed from now on.
+# To tighten later: check_untyped_defs = true, then disallow_untyped_defs per module.

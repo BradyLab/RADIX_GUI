@@ -33,6 +33,25 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
 
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-typecheck.txt
+
+      # Needs the real libraries installed (not torch -- see [tool.mypy] in pyproject.toml).
+      # Run locally with:  mypy
+      - run: pip install -r requirements-typecheck.txt
+      - run: mypy
+
   tests:
     # One job per OS: the app ships .bat and .command launchers, so users are on
     # Windows and macOS as well as Linux. NOTE: the check names are now
