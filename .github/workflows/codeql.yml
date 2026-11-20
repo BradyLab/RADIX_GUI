@@ -1,0 +1,50 @@
+name: codeql
+
+# GitHub's static analyzer. For the Python code it looks for vulnerability patterns such
+# as command injection, path traversal and unsafe deserialization (relevant here: GUI.py
+# builds a subprocess command from UI input, and the app loads .npy files). The `actions`
+# language additionally scans .github/workflows for things like script injection.
+#
+# Findings appear under the repo's Security -> Code scanning tab.
+# Requires a public repo (or GitHub Advanced Security on a private one). If you ever
+# enable "Code scanning -> Default setup" in repo settings, turn it off or this workflow
+# will conflict with it.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 7 * * 1" # weekly, so newly added queries run against unchanged code too
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write # upload results to the Security tab
+      actions: read
+      packages: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, actions]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none # interpreted languages: no build step needed
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
