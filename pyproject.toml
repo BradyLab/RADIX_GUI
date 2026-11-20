@@ -1,0 +1,46 @@
+# Tool configuration. (Dependencies live in requirements*.txt; this is not a package.)
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+# Only lint/format code this fork owns. Everything else in src/ and predict.py comes
+# from upstream (Olofnovize/RADIX_GUI); reformatting it would conflict with every
+# upstream merge. To opt a file in, add it to this list.
+include = [
+    "GUI.py",
+    "tests/**/*.py",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "F",  # pyflakes: unused/undefined names, etc.
+    "I",  # import sorting
+    "B",  # flake8-bugbear: likely bugs
+]
+ignore = [
+    "E501",  # line length is the formatter's job; it can't split long strings/comments
+    "B905",  # zip() without strict=: noise for this codebase
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.coverage.run]
+source = ["src", "GUI"]
+# These import torch / albumentations, which the slim CI environment
+# (requirements-ci.txt) deliberately doesn't install, so they can't be measured
+# there. The install-smoke workflow imports them against the full requirements.
+omit = [
+    "src/lightning_module.py",
+    "src/unet_dataset.py",
+    "src/augmentation.py",
+]
+
+[tool.coverage.report]
+# Floor, not a target: a little under the current figure (~48%) so platform
+# noise doesn't fail the build. Ratchet it up as tests are added.
+fail_under = 45
+skip_covered = true
+show_missing = true
