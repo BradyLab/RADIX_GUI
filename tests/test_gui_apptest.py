@@ -1,8 +1,8 @@
 """Fast, browser-free tests using Streamlit's AppTest harness."""
-import pytest
-from streamlit.testing.v1 import AppTest
 
+import pytest
 from conftest import APP_DIR, N_SAMPLES
+from streamlit.testing.v1 import AppTest
 
 
 @pytest.fixture
@@ -20,7 +20,9 @@ def test_no_predictions_shows_guidance(monkeypatch, tmp_path):
     app.run()
     assert not app.exception
     assert [t.label for t in app.tabs] == [
-        "1 · Segmentation", "2 · Threshold tuning", "3 · Batch & export",
+        "1 · Segmentation",
+        "2 · Threshold tuning",
+        "3 · Batch & export",
     ]
     assert any("No prediction files found" in i.value for i in app.info)
 
@@ -46,8 +48,10 @@ def test_copy_to_all_and_reset(at):
     at.slider(key="epidermis_fitc_raw_range").set_value((1500, 40000)).run()
     [b for b in at.button if b.label == "Copy to all tissues"][0].click().run()
     store = at.session_state["thr_store"]
-    assert all(store[f"{t}_fitc_raw"] == (1500, 40000)
-               for t in ["epidermis", "exodermis", "endodermis", "cortex", "vascular"])
+    assert all(
+        store[f"{t}_fitc_raw"] == (1500, 40000)
+        for t in ["epidermis", "exodermis", "endodermis", "cortex", "vascular"]
+    )
 
     [b for b in at.button if b.label == "Reset tissue"][0].click().run()
     assert at.session_state["thr_store"]["epidermis_fitc_raw"] == (600, 65535)
@@ -89,13 +93,16 @@ def test_suggestions_report_skipped_samples(sample_data_dir):
     """Load failures are surfaced via DataFrame.attrs (no pandas attribute warning)."""
     import warnings
     from pathlib import Path
+
     from src.intensity_quant import compute_threshold_percentile_suggestions
 
     root = Path(sample_data_dir)
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # fail on any UserWarning
         df = compute_threshold_percentile_suggestions(
-            ["Sample_01", "does_not_exist"], root, root.parent / "ml" / "predictions",
+            ["Sample_01", "does_not_exist"],
+            root,
+            root.parent / "ml" / "predictions",
             ["TRITC", "FITC", "DAPI"],
         )
     assert not df.empty
