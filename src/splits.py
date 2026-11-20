@@ -42,7 +42,9 @@ def get_split(
         Dict with "train", "val", "test" lists of SampleRecord.
     """
     if strategy not in STRATEGY_SPECIES:
-        raise ValueError(f"Unknown strategy '{strategy}'. Choose from: {list(STRATEGY_SPECIES.keys())}")
+        raise ValueError(
+            f"Unknown strategy '{strategy}'. Choose from: {list(STRATEGY_SPECIES.keys())}"
+        )
 
     strategy_filter = STRATEGY_SPECIES[strategy]
 

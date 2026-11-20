@@ -27,9 +27,9 @@ source = ["src", "GUI"]
 # (requirements-ci.txt) deliberately doesn't install, so they can't be measured
 # there. The install-smoke workflow imports them against the full requirements.
 omit = [
-    "src/lightning_module.py",
-    "src/unet_dataset.py",
-    "src/augmentation.py",
+    'src/lightning_module.py',
+    'src/unet_dataset.py',
+    'src/augmentation.py',
 ]
 
 [tool.coverage.report]

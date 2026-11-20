@@ -6,6 +6,7 @@ from plotly.subplots import make_subplots
 
 CHANNELS = ["TRITC", "FITC", "DAPI"]
 
+
 def to_uint8(img):
     img = img - img.min()
     img = img / (img.max() + 1e-6)
@@ -25,7 +26,9 @@ def crop_to_mask(img, mask, pad=80):
     return img[y0:y1, x0:x1], (y0, y1, x0, x1)
 
 
-def make_ring_qc_plot(base_img, ring_stats, crop_offset=(0, 0), selected_peak_id=None, channel=None, bad_peak_ids=None):
+def make_ring_qc_plot(
+    base_img, ring_stats, crop_offset=(0, 0), selected_peak_id=None, channel=None, bad_peak_ids=None
+):
     """
     Interactive QC plot:
     left = image with ring path and peak nodes
@@ -147,11 +150,13 @@ def make_ring_qc_plot(base_img, ring_stats, crop_offset=(0, 0), selected_peak_id
                 color=marker_colors,
                 line=dict(color="white", width=1),
             ),
-            customdata=np.column_stack([
-                kept_peak_ids,
-                kept_peak_indices,
-                np.round(kept_peak_values, 1),
-            ]),
+            customdata=np.column_stack(
+                [
+                    kept_peak_ids,
+                    kept_peak_indices,
+                    np.round(kept_peak_values, 1),
+                ]
+            ),
             hovertemplate=(
                 "Peak ID: %{customdata[0]}<br>"
                 "Signal index: %{customdata[1]}<br>"
@@ -192,11 +197,13 @@ def make_ring_qc_plot(base_img, ring_stats, crop_offset=(0, 0), selected_peak_id
                 color=signal_marker_colors,
                 line=dict(color="black", width=1),
             ),
-            customdata=np.column_stack([
-                peak_ids,
-                peaks,
-                np.round(peak_values, 1),
-            ]),
+            customdata=np.column_stack(
+                [
+                    peak_ids,
+                    peaks,
+                    np.round(peak_values, 1),
+                ]
+            ),
             hovertemplate=(
                 "Peak ID: %{customdata[0]}<br>"
                 "Signal index: %{customdata[1]}<br>"
@@ -447,46 +454,37 @@ def build_peak_feature_table(raw, ring_stats, channel):
         preliminary_score.append(score)
         rule_hint.append("plausible" if len(reasons) == 0 else "; ".join(reasons))
 
-    df = pd.DataFrame({
-        "peak_id": np.arange(1, len(peaks) + 1),
-        "ring_index": peaks,
-        "y": pts[:, 0] if len(pts) else np.nan,
-        "x": pts[:, 1] if len(pts) else np.nan,
-
-        "signal_height": peak_heights,
-        "height_ratio": height_ratio,
-
-        "prominence": prominences,
-        "prominence_ratio": prominence_ratio,
-
-        "left_valley": left_bases,
-        "right_valley": right_bases,
-
-        "width": widths,
-        "width_ratio": width_ratio,
-
-        "left_spacing": left_spacing,
-        "right_spacing": right_spacing,
-        "min_spacing_ratio": min_spacing_ratio,
-        "max_spacing_ratio": max_spacing_ratio,
-
-        "xy_dist_left": xy_dist_left,
-        "xy_dist_right": xy_dist_right,
-        "min_xy_dist": min_xy_dist,
-
-        "multi_ring_support": support,
-
-        "gradient_max_r2": gradient_max_r2,
-        "gradient_norm": gradient_norm,
-
-        "selected_channel_raw_r2": selected_channel_raw_r2,
-
-        "TRITC_norm_r2": multi_channel_norm["TRITC"],
-        "FITC_norm_r2": multi_channel_norm["FITC"],
-        "DAPI_norm_r2": multi_channel_norm["DAPI"],
-
-        "preliminary_score": preliminary_score,
-        "rule_hint": rule_hint,
-    })
+    df = pd.DataFrame(
+        {
+            "peak_id": np.arange(1, len(peaks) + 1),
+            "ring_index": peaks,
+            "y": pts[:, 0] if len(pts) else np.nan,
+            "x": pts[:, 1] if len(pts) else np.nan,
+            "signal_height": peak_heights,
+            "height_ratio": height_ratio,
+            "prominence": prominences,
+            "prominence_ratio": prominence_ratio,
+            "left_valley": left_bases,
+            "right_valley": right_bases,
+            "width": widths,
+            "width_ratio": width_ratio,
+            "left_spacing": left_spacing,
+            "right_spacing": right_spacing,
+            "min_spacing_ratio": min_spacing_ratio,
+            "max_spacing_ratio": max_spacing_ratio,
+            "xy_dist_left": xy_dist_left,
+            "xy_dist_right": xy_dist_right,
+            "min_xy_dist": min_xy_dist,
+            "multi_ring_support": support,
+            "gradient_max_r2": gradient_max_r2,
+            "gradient_norm": gradient_norm,
+            "selected_channel_raw_r2": selected_channel_raw_r2,
+            "TRITC_norm_r2": multi_channel_norm["TRITC"],
+            "FITC_norm_r2": multi_channel_norm["FITC"],
+            "DAPI_norm_r2": multi_channel_norm["DAPI"],
+            "preliminary_score": preliminary_score,
+            "rule_hint": rule_hint,
+        }
+    )
 
     return df

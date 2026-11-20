@@ -38,19 +38,20 @@ ANNOTATED_CLASSES = {
 TARGET_CLASSES = {
     0: "Whole Root",
     1: "Aerenchyma",
-    2: "Endodermis",   # ring: outer - inner
-    3: "Vascular",     # area inside inner endodermis
+    2: "Endodermis",  # ring: outer - inner
+    3: "Vascular",  # area inside inner endodermis
 }
 
 TARGET_CLASSES_5 = {
     0: "Whole Root",
     1: "Aerenchyma",
-    2: "Endodermis",   # ring: outer - inner
-    3: "Vascular",     # area inside inner endodermis
-    4: "Exodermis",    # ring: outer - inner (tomato only)
+    2: "Endodermis",  # ring: outer - inner
+    3: "Vascular",  # area inside inner endodermis
+    4: "Exodermis",  # ring: outer - inner (tomato only)
 }
 
 NUM_CLASSES = len(TARGET_CLASSES_5)
+
 
 def get_target_classes(num_classes: int = 5) -> dict:
     """Return class dict by count. For model-specific lookup, use MODEL_REGISTRY in src.model_classes."""
@@ -62,30 +63,30 @@ def get_target_classes(num_classes: int = 5) -> dict:
 # Which target classes are valid (annotated) per species.
 # All species now have complete annotations for all 5 target classes.
 SPECIES_VALID_CLASSES = {
-    "Millet":  {0, 1, 2, 3, 4},
-    "Rice":    {0, 1, 2, 3, 4},
+    "Millet": {0, 1, 2, 3, 4},
+    "Rice": {0, 1, 2, 3, 4},
     "Sorghum": {0, 1, 2, 3, 4},
-    "Tomato":  {0, 1, 2, 3, 4},
+    "Tomato": {0, 1, 2, 3, 4},
 }
 
 # ── Visualization colors (BGR for OpenCV, RGB for matplotlib) ─────────────────
 # Colors for *annotated* classes (as stored in .txt files)
 CLASS_COLORS_RGB = {
-    0: (0, 0, 255),      # Whole Root — Blue
-    1: (255, 255, 0),     # Aerenchyma — Yellow
-    2: (0, 255, 0),       # Outer Endodermis — Green
-    3: (255, 0, 0),       # Inner Endodermis — Red
-    4: (255, 128, 0),     # Outer Exodermis — Orange
-    5: (128, 0, 255),     # Inner Exodermis — Purple
+    0: (0, 0, 255),  # Whole Root — Blue
+    1: (255, 255, 0),  # Aerenchyma — Yellow
+    2: (0, 255, 0),  # Outer Endodermis — Green
+    3: (255, 0, 0),  # Inner Endodermis — Red
+    4: (255, 128, 0),  # Outer Exodermis — Orange
+    5: (128, 0, 255),  # Inner Exodermis — Purple
 }
 
 # Colors for *target* classes (derived semantic regions for model training)
 TARGET_CLASS_COLORS_RGB = {
-    0: (0, 0, 255),      # Whole Root — Blue
-    1: (255, 255, 0),     # Aerenchyma — Yellow
-    2: (0, 255, 0),       # Endodermis — Green
-    3: (255, 0, 0),       # Vascular — Red
-    4: (0, 255, 255),     # Exodermis — Cyan
+    0: (0, 0, 255),  # Whole Root — Blue
+    1: (255, 255, 0),  # Aerenchyma — Yellow
+    2: (0, 255, 0),  # Endodermis — Green
+    3: (255, 0, 0),  # Vascular — Red
+    4: (0, 255, 255),  # Exodermis — Cyan
 }
 
 # ── Training defaults ─────────────────────────────────────────────────────────
@@ -100,6 +101,7 @@ DEFAULT_BACKBONE_LR = 1e-5
 @dataclass
 class SampleRecord:
     """Metadata for a single annotated sample."""
+
     species: str
     microscope: str
     experiment: str

@@ -35,19 +35,22 @@ def load_raw_tiff_sample(sample_name, data_dir, channels):
     for ch in channels:
         ch_variants = CHANNEL_ALIASES.get(ch.upper(), [ch])
 
-        matches = sorted([
-            p for p in search_root.rglob("*.tif*")
-            if any(
-                (
-                    f"_{alias.lower()}." in p.name.lower()
-                    or f"_{alias.lower()}_" in p.name.lower()
-                    or f"({alias.lower()})" in p.name.lower()
-                    or f"-{alias.lower()}-" in p.name.lower()
-                    or f"-{alias.lower()}." in p.name.lower()
+        matches = sorted(
+            [
+                p
+                for p in search_root.rglob("*.tif*")
+                if any(
+                    (
+                        f"_{alias.lower()}." in p.name.lower()
+                        or f"_{alias.lower()}_" in p.name.lower()
+                        or f"({alias.lower()})" in p.name.lower()
+                        or f"-{alias.lower()}-" in p.name.lower()
+                        or f"-{alias.lower()}." in p.name.lower()
+                    )
+                    for alias in ch_variants
                 )
-                for alias in ch_variants
-            )
-        ])
+            ]
+        )
 
         if not matches:
             raise FileNotFoundError(

@@ -519,6 +519,7 @@ with tab_seg:
             logs = []
             current_sample = ""
 
+            assert process.stdout is not None  # guaranteed by stdout=PIPE above
             for line in process.stdout:
                 line = line.rstrip()
                 logs.append(line)

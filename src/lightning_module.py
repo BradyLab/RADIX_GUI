@@ -26,7 +26,7 @@ def _tokens_to_bchw(feat):
     """
     if feat.dim() == 3:
         B, N, C = feat.shape
-        h = w = int(N ** 0.5)
+        h = w = int(N**0.5)
         return feat.reshape(B, h, w, C).permute(0, 3, 1, 2).contiguous()
     if feat.dim() == 4:
         _, d1, d2, d3 = feat.shape
@@ -40,6 +40,7 @@ def _tokens_to_bchw(feat):
 # HuggingFace DINOv3 backbone wrapper (timm-compatible API)
 # ══════════════════════════════════════════════════════════════════════
 
+
 class HFViTBackbone(nn.Module):
     """Wrap a HuggingFace ViT-style model to expose a timm-like
     `forward_intermediates(x, indices=..., norm=True)` returning a list of
@@ -48,9 +49,11 @@ class HFViTBackbone(nn.Module):
     def __init__(self, hf_name, pretrained=True):
         super().__init__()
         from transformers import AutoModel
+
         kwargs = {"output_hidden_states": True}
         if not pretrained:
             from transformers import AutoConfig
+
             cfg = AutoConfig.from_pretrained(hf_name)
             self.model = AutoModel.from_config(cfg)
         else:
@@ -67,8 +70,9 @@ class HFViTBackbone(nn.Module):
         # Fake `blocks` and `patch_embed.patch_size` for code that reads them
         self.blocks = self.model.encoder.layer if hasattr(self.model, "encoder") else []
 
-    def forward_intermediates(self, x, indices, return_prefix_tokens=False,
-                              intermediates_only=True, norm=True):
+    def forward_intermediates(
+        self, x, indices, return_prefix_tokens=False, intermediates_only=True, norm=True
+    ):
         """Return a list of (B, N, C) patch-token tensors at block `indices`.
 
         Matches timm's API contract for the subset of args we use.
@@ -80,7 +84,7 @@ class HFViTBackbone(nn.Module):
             h = hidden[i + 1]  # after block i (0-indexed)
             # Strip CLS + register tokens
             if h.shape[1] > self.num_prefix:
-                h = h[:, self.num_prefix:, :]
+                h = h[:, self.num_prefix :, :]
             feats.append(h)
         return feats
 
@@ -92,6 +96,7 @@ class HFViTBackbone(nn.Module):
 # ══════════════════════════════════════════════════════════════════════
 # Decoders
 # ══════════════════════════════════════════════════════════════════════
+
 
 class DPTDecoder(nn.Module):
     """Simple DPT-style decoder for plain ViT encoders.
@@ -109,36 +114,42 @@ class DPTDecoder(nn.Module):
         n_features = len(feature_indices)
 
         # Project each ViT layer output to common channel dim
-        self.projects = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(embed_dim, out_channels, 1),
-                nn.BatchNorm2d(out_channels),
-                nn.GELU(),
-            ) for _ in range(n_features)
-        ])
+        self.projects = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv2d(embed_dim, out_channels, 1),
+                    nn.BatchNorm2d(out_channels),
+                    nn.GELU(),
+                )
+                for _ in range(n_features)
+            ]
+        )
 
         # Progressive fusion: bottom-up, each level fuses with the one below
-        self.fusions = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(out_channels, out_channels, 3, padding=1),
-                nn.BatchNorm2d(out_channels),
-                nn.GELU(),
-                nn.Conv2d(out_channels, out_channels, 3, padding=1),
-                nn.BatchNorm2d(out_channels),
-                nn.GELU(),
-            ) for _ in range(n_features - 1)
-        ])
+        self.fusions = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv2d(out_channels, out_channels, 3, padding=1),
+                    nn.BatchNorm2d(out_channels),
+                    nn.GELU(),
+                    nn.Conv2d(out_channels, out_channels, 3, padding=1),
+                    nn.BatchNorm2d(out_channels),
+                    nn.GELU(),
+                )
+                for _ in range(n_features - 1)
+            ]
+        )
 
         # Final upsample to full resolution
         self.up = nn.Sequential(
             nn.Conv2d(out_channels, out_channels, 3, padding=1),
             nn.BatchNorm2d(out_channels),
             nn.GELU(),
-            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
             nn.Conv2d(out_channels, out_channels // 2, 3, padding=1),
             nn.BatchNorm2d(out_channels // 2),
             nn.GELU(),
-            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
             nn.Conv2d(out_channels // 2, out_channels // 4, 3, padding=1),
             nn.BatchNorm2d(out_channels // 4),
             nn.GELU(),
@@ -152,13 +163,12 @@ class DPTDecoder(nn.Module):
         Returns:
             (B, out_channels//4, H, W) tensor at ~full resolution
         """
-        projected = [self.projects[i](_tokens_to_bchw(f))
-                     for i, f in enumerate(features)]
+        projected = [self.projects[i](_tokens_to_bchw(f)) for i, f in enumerate(features)]
 
         # Progressive fusion (bottom-up: deepest first)
         x = projected[-1]
         for i in range(len(self.fusions) - 1, -1, -1):
-            x = F.interpolate(x, size=projected[i].shape[2:], mode='bilinear', align_corners=False)
+            x = F.interpolate(x, size=projected[i].shape[2:], mode="bilinear", align_corners=False)
             x = x + projected[i]
             x = self.fusions[i](x)
 
@@ -203,13 +213,12 @@ class SegDINOMLPDecoder(nn.Module):
     Reference: Yang et al. 2025, SegDINO (arXiv 2509.00833).
     """
 
-    def __init__(self, embed_dim, feature_indices, proj_channels=256,
-                 hidden_channels=512, **_ignored):
+    def __init__(
+        self, embed_dim, feature_indices, proj_channels=256, hidden_channels=512, **_ignored
+    ):
         super().__init__()
         n = len(feature_indices)
-        self.projects = nn.ModuleList([
-            nn.Conv2d(embed_dim, proj_channels, 1) for _ in range(n)
-        ])
+        self.projects = nn.ModuleList([nn.Conv2d(embed_dim, proj_channels, 1) for _ in range(n)])
         total = proj_channels * n
         self.mlp = nn.Sequential(
             nn.Conv2d(total, hidden_channels, 1),
@@ -230,6 +239,7 @@ class SegDINOMLPDecoder(nn.Module):
 # Model
 # ══════════════════════════════════════════════════════════════════════
 
+
 class TimmSemanticModel(nn.Module):
     """Flexible semantic segmentation model using any timm encoder.
 
@@ -237,29 +247,39 @@ class TimmSemanticModel(nn.Module):
     For plain ViT encoders (DINOv2): uses custom DPT decoder.
     """
 
-    def __init__(self, encoder_name, decoder_type="unetplusplus",
-                 pretrained=True, img_size=1024, num_classes=7):
+    def __init__(
+        self,
+        encoder_name,
+        decoder_type="unetplusplus",
+        pretrained=True,
+        img_size=1024,
+        num_classes=7,
+    ):
         super().__init__()
         self.encoder_name = encoder_name
         self.decoder_type = decoder_type
         self.img_size = img_size
         self.is_hf = encoder_name.startswith("hf:")
-        self.is_vit = self.is_hf or ('vit' in encoder_name) or ('dino' in encoder_name)
+        self.is_vit = self.is_hf or ("vit" in encoder_name) or ("dino" in encoder_name)
 
         if self.is_vit:
             if self.is_hf:
-                hf_name = encoder_name[len("hf:"):]
+                hf_name = encoder_name[len("hf:") :]
                 self.encoder = HFViTBackbone(hf_name, pretrained=pretrained)
                 embed_dim = self.encoder.embed_dim
                 n_blocks = self.encoder.num_blocks
                 patch_size = self.encoder.patch_size[0]
             else:
                 # timm plain ViT (DINOv2 via `vit_small_patch14_dinov2.lvd142m` etc.)
-                patch_size_guess = 14 if 'patch14' in encoder_name else 16
-                padded_size = img_size + (patch_size_guess - img_size % patch_size_guess) % patch_size_guess
+                patch_size_guess = 14 if "patch14" in encoder_name else 16
+                padded_size = (
+                    img_size + (patch_size_guess - img_size % patch_size_guess) % patch_size_guess
+                )
                 self.encoder = timm.create_model(
-                    encoder_name, pretrained=pretrained,
-                    img_size=padded_size, num_classes=0,
+                    encoder_name,
+                    pretrained=pretrained,
+                    img_size=padded_size,
+                    num_classes=0,
                 )
                 embed_dim = self.encoder.embed_dim
                 n_blocks = len(self.encoder.blocks)
@@ -269,8 +289,7 @@ class TimmSemanticModel(nn.Module):
             #   dpt / segdino_mlp : 4 evenly-spaced layers (captures low→high)
             #   ms_linear         : last 4 layers (Meta's +ms recipe)
             if decoder_type == "ms_linear":
-                self.feature_indices = [n_blocks - 4, n_blocks - 3,
-                                        n_blocks - 2, n_blocks - 1]
+                self.feature_indices = [n_blocks - 4, n_blocks - 3, n_blocks - 2, n_blocks - 1]
             else:
                 self.feature_indices = [
                     n_blocks // 4 - 1,
@@ -288,16 +307,18 @@ class TimmSemanticModel(nn.Module):
                 )
             elif decoder_type == "ms_linear":
                 self.decoder = MSLinearDecoder(
-                    embed_dim=embed_dim, feature_indices=self.feature_indices,
+                    embed_dim=embed_dim,
+                    feature_indices=self.feature_indices,
                 )
             elif decoder_type == "segdino_mlp":
                 self.decoder = SegDINOMLPDecoder(
-                    embed_dim=embed_dim, feature_indices=self.feature_indices,
-                    proj_channels=256, hidden_channels=512,
+                    embed_dim=embed_dim,
+                    feature_indices=self.feature_indices,
+                    proj_channels=256,
+                    hidden_channels=512,
                 )
             else:
-                raise ValueError(
-                    f"decoder={decoder_type} not supported for plain-ViT encoders")
+                raise ValueError(f"decoder={decoder_type} not supported for plain-ViT encoders")
 
             self.head = nn.Conv2d(self.decoder.out_channels, num_classes, 1)
             self.patch_size = patch_size
@@ -306,10 +327,11 @@ class TimmSemanticModel(nn.Module):
             # Pass img_size for models that need it (e.g., Swin)
             encoder_kwargs = dict(
                 pretrained=pretrained,
-                features_only=True, out_indices=(0, 1, 2, 3),
+                features_only=True,
+                out_indices=(0, 1, 2, 3),
             )
-            if 'swin' in encoder_name:
-                encoder_kwargs['img_size'] = img_size
+            if "swin" in encoder_name:
+                encoder_kwargs["img_size"] = img_size
             self.encoder = timm.create_model(encoder_name, **encoder_kwargs)
 
             # Get feature channels (handle both BCHW and BHWC formats)
@@ -324,7 +346,10 @@ class TimmSemanticModel(nn.Module):
                 feature_channels = [f.shape[1] for f in feats]
 
             if decoder_type == "unetplusplus":
-                from segmentation_models_pytorch.decoders.unetplusplus.decoder import UnetPlusPlusDecoder
+                from segmentation_models_pytorch.decoders.unetplusplus.decoder import (
+                    UnetPlusPlusDecoder,
+                )
+
                 # encoder_channels format: [input_channels, *feature_channels]
                 # For 4-level features, we need depth=4
                 encoder_channels = [3] + feature_channels
@@ -350,7 +375,7 @@ class TimmSemanticModel(nn.Module):
         pad_h = (self.patch_size - h % self.patch_size) % self.patch_size
         pad_w = (self.patch_size - w % self.patch_size) % self.patch_size
         if pad_h > 0 or pad_w > 0:
-            x = F.pad(x, (0, pad_w, 0, pad_h), mode='reflect')
+            x = F.pad(x, (0, pad_w, 0, pad_h), mode="reflect")
         return x, (h, w)
 
     def forward(self, x):
@@ -362,8 +387,11 @@ class TimmSemanticModel(nn.Module):
 
             # Extract intermediate features
             intermediates = self.encoder.forward_intermediates(
-                x, indices=self.feature_indices, return_prefix_tokens=False,
-                intermediates_only=True, norm=True,
+                x,
+                indices=self.feature_indices,
+                return_prefix_tokens=False,
+                intermediates_only=True,
+                norm=True,
             )
 
             # Decode
@@ -373,10 +401,10 @@ class TimmSemanticModel(nn.Module):
             # Bilinear interpolation is linear so result is identical to upsample-then-head,
             # but we avoid materializing a high-channel tensor at full resolution.
             logits = self.head(decoded)
-            logits = F.interpolate(logits, size=x.shape[2:], mode='bilinear', align_corners=False)
+            logits = F.interpolate(logits, size=x.shape[2:], mode="bilinear", align_corners=False)
 
             if orig_size is not None:
-                logits = logits[:, :, :orig_size[0], :orig_size[1]]
+                logits = logits[:, :, : orig_size[0], : orig_size[1]]
         else:
             # Hierarchical encoder
             features = self.encoder(x)
@@ -396,7 +424,9 @@ class TimmSemanticModel(nn.Module):
 
             # Upsample to original size if needed
             if decoded.shape[2] != orig_h or decoded.shape[3] != orig_w:
-                decoded = F.interpolate(decoded, size=(orig_h, orig_w), mode='bilinear', align_corners=False)
+                decoded = F.interpolate(
+                    decoded, size=(orig_h, orig_w), mode="bilinear", align_corners=False
+                )
 
             logits = self.head(decoded)
 
@@ -406,6 +436,7 @@ class TimmSemanticModel(nn.Module):
 # ══════════════════════════════════════════════════════════════════════
 # Lightning Module
 # ══════════════════════════════════════════════════════════════════════
+
 
 class TimmSemanticModule(pl.LightningModule):
     """Lightning module for timm-based semantic segmentation."""

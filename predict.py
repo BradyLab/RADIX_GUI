@@ -4,6 +4,7 @@ import argparse
 import csv
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cv2
@@ -312,7 +313,13 @@ def main():
     (out_dir / "predictions").mkdir(parents=True, exist_ok=True)
     (out_dir / "vis").mkdir(parents=True, exist_ok=True)
 
-    device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    device = (
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
     print(f"Device: {device}")
 
     ckpt = find_checkpoint(model_dir)
@@ -374,12 +381,7 @@ def main():
         bio7_full = unet_semantic_to_bio7(sem_full, *sem_full.shape)
 
         if save_visualizations:
-            save_vis(
-                to_uint8(norm),
-                bio7_full,
-                sample_name,
-                out_dir / "vis" / f"{sample_name}.png"
-            )
+            save_vis(to_uint8(norm), bio7_full, sample_name, out_dir / "vis" / f"{sample_name}.png")
 
         rows.append(measure(sample_name, raw_crop, bio7_crop))
 

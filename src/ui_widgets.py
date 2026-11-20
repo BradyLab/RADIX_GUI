@@ -1,5 +1,6 @@
 import streamlit as st
 
+
 def slider_with_box(label, min_value, max_value, value, step=1, key=None):
     """Synchronized Streamlit slider + number box."""
     if key is None:

@@ -38,10 +38,12 @@ def parse_yolo_annotations(
                 y = coords[i + 1] * img_h
                 points.append([x, y])
             if len(points) >= 3:
-                annotations.append({
-                    "class_id": class_id,
-                    "polygon": np.array(points, dtype=np.float32),
-                })
+                annotations.append(
+                    {
+                        "class_id": class_id,
+                        "polygon": np.array(points, dtype=np.float32),
+                    }
+                )
     return annotations
 
 
@@ -57,13 +59,13 @@ def polygon_to_mask(polygon: np.ndarray, h: int, w: int) -> np.ndarray:
     """
     mask = np.zeros((h, w), dtype=np.uint8)
     pts = np.round(polygon).astype(np.int32).reshape((-1, 1, 2))
-    cv2.fillPoly(mask, [pts], 1)
+    cv2.fillPoly(mask, [pts], (1,))
     # Fix holes from self-intersecting polygons: cv2.fillPoly uses the
     # even-odd rule, so self-crossings create unfilled interior regions.
     # Re-fill from outer contour to produce a solid mask.
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if contours:
-        cv2.drawContours(mask, contours, -1, 1, thickness=cv2.FILLED)
+        cv2.drawContours(mask, contours, -1, (1,), thickness=cv2.FILLED)
     return mask
 
 
@@ -122,7 +124,9 @@ def polygons_to_instance_masks(
     if outer_endo is not None and inner_endo is not None:
         outer_mask = polygon_to_mask(outer_endo, h, w)
         inner_mask = polygon_to_mask(inner_endo, h, w)
-        ring_mask = np.clip(outer_mask.astype(np.int8) - inner_mask.astype(np.int8), 0, 1).astype(np.uint8)
+        ring_mask = np.clip(outer_mask.astype(np.int8) - inner_mask.astype(np.int8), 0, 1).astype(
+            np.uint8
+        )
         if ring_mask.sum() > 0:
             masks_list.append(ring_mask)
             labels_list.append(2)  # Endodermis
@@ -138,7 +142,9 @@ def polygons_to_instance_masks(
     if num_classes >= 5 and outer_exo is not None and inner_exo is not None:
         outer_mask = polygon_to_mask(outer_exo, h, w)
         inner_mask = polygon_to_mask(inner_exo, h, w)
-        ring_mask = np.clip(outer_mask.astype(np.int8) - inner_mask.astype(np.int8), 0, 1).astype(np.uint8)
+        ring_mask = np.clip(outer_mask.astype(np.int8) - inner_mask.astype(np.int8), 0, 1).astype(
+            np.uint8
+        )
         if ring_mask.sum() > 0:
             masks_list.append(ring_mask)
             labels_list.append(4)  # Exodermis
