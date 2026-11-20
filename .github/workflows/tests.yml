@@ -15,6 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Only ruff is needed (no project deps), so this job finishes in seconds.
+      # Fix locally with:  ruff check --fix . && ruff format .
+      - run: pip install -r requirements-lint.txt
+      - run: ruff check .
+      - run: ruff format --check .
+
   tests:
     name: tests
     runs-on: ubuntu-latest

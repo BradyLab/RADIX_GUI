@@ -21,11 +21,11 @@ def _make_prediction(size: int = 256) -> np.ndarray:
     yy, xx = np.mgrid[:size, :size]
     r = np.hypot(yy - size / 2, xx - size / 2) / size
     sem = np.zeros((size, size), dtype=np.uint8)
-    sem[r < 0.32] = 1   # epidermis (outermost ring)
-    sem[r < 0.28] = 5   # exodermis
-    sem[r < 0.24] = 6   # cortex
-    sem[r < 0.14] = 3   # endodermis
-    sem[r < 0.10] = 4   # vascular
+    sem[r < 0.32] = 1  # epidermis (outermost ring)
+    sem[r < 0.28] = 5  # exodermis
+    sem[r < 0.24] = 6  # cortex
+    sem[r < 0.14] = 3  # endodermis
+    sem[r < 0.10] = 4  # vascular
     sem[(r > 0.18) & (r < 0.22) & (xx > size / 2 + 10)] = 2  # a little aerenchyma
     return sem
 
@@ -69,10 +69,17 @@ def app_url():
     port = _free_port()
     proc = subprocess.Popen(
         [
-            sys.executable, "-m", "streamlit", "run", "GUI.py",
-            "--server.port", str(port),
-            "--server.headless", "true",
-            "--browser.gatherUsageStats", "false",
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            "GUI.py",
+            "--server.port",
+            str(port),
+            "--server.headless",
+            "true",
+            "--browser.gatherUsageStats",
+            "false",
         ],
         cwd=APP_DIR,
         stdout=subprocess.DEVNULL,
@@ -86,7 +93,7 @@ def app_url():
             break
         except Exception:
             if proc.poll() is not None:
-                raise RuntimeError("Streamlit exited before becoming healthy")
+                raise RuntimeError("Streamlit exited before becoming healthy") from None
             time.sleep(0.5)
     else:
         proc.kill()

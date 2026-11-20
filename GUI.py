@@ -1,33 +1,29 @@
+import re
 import subprocess
 import sys
-import re
-
-import streamlit as st
-import numpy as np
-import pandas as pd
 from pathlib import Path
 
-from src.ui_widgets import range_slider_with_boxes
-
-from src.io_utils import (
-    load_sample,
-    infer_species,
-)
+import numpy as np
+import pandas as pd
+import streamlit as st
 
 from src.intensity_quant import (
     BARRIER_TISSUES,
-    normalize_channel,
-    normalize_percentile_rgb,
     compute_threshold_percentile_suggestions,
     measure_barrier_intensity_batch,
     measure_root_morphometrics,
+    normalize_channel,
+    normalize_percentile_rgb,
 )
-
+from src.io_utils import (
+    infer_species,
+    load_sample,
+)
 from src.plotting_utils import (
-    to_uint8,
     crop_to_mask,
+    to_uint8,
 )
-
+from src.ui_widgets import range_slider_with_boxes
 
 # -------------------------
 # CONSTANTS
@@ -288,8 +284,11 @@ def density_figure(vals, mode, ch, region, lo, hi, sugg_row=None):
     color = LINE_COLORS[ch]
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode="lines", fill="tozeroy",
-                             name="Density", line=dict(color=color)))
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals, y=y_vals, mode="lines", fill="tozeroy", name="Density", line=dict(color=color)
+        )
+    )
 
     def _vline(x, label, line_color, width, dash=None, y_label=1.0, size=11, angle=0):
         # Draw as a shape + separate annotation. add_vline(annotation_text=...)
@@ -297,18 +296,40 @@ def density_figure(vals, mode, ch, region, lo, hi, sugg_row=None):
         # shapes in data units, so labels land at 10^x and blow up the axis range.
         if not np.isfinite(x) or (log_x and x <= 0):
             return
-        fig.add_shape(type="line", x0=x, x1=x, y0=0, y1=1, yref="paper",
-                      line=dict(color=line_color, width=width, dash=dash))
-        fig.add_annotation(x=np.log10(x) if log_x else x, y=y_label, yref="paper",
-                           text=label, showarrow=False, yanchor="bottom" if angle == 0 else "top",
-                           font=dict(size=size, color=line_color), textangle=angle)
+        fig.add_shape(
+            type="line",
+            x0=x,
+            x1=x,
+            y0=0,
+            y1=1,
+            yref="paper",
+            line=dict(color=line_color, width=width, dash=dash),
+        )
+        fig.add_annotation(
+            x=np.log10(x) if log_x else x,
+            y=y_label,
+            yref="paper",
+            text=label,
+            showarrow=False,
+            yanchor="bottom" if angle == 0 else "top",
+            font=dict(size=size, color=line_color),
+            textangle=angle,
+        )
 
     if sugg_row is not None:
         for col in sugg_row.index:
             if col.startswith("p") and col[1:].isdigit():
                 try:
-                    _vline(float(sugg_row[col]), col, ref_color, 1, dash="dot",
-                           y_label=0.98, size=9, angle=-90)
+                    _vline(
+                        float(sugg_row[col]),
+                        col,
+                        ref_color,
+                        1,
+                        dash="dot",
+                        y_label=0.98,
+                        size=9,
+                        angle=-90,
+                    )
                 except Exception:
                     pass
 
@@ -349,16 +370,19 @@ def suggestions_panel(region, threshold_mode):
         st.session_state.pop("sugg_msg", None)
         with st.spinner("Scanning all samples for intensity statistics..."):
             suggestions_df = compute_threshold_percentile_suggestions(
-                samples, DATA_DIR, PRED_DIR, CHANNELS,
-                mask_source=MASK_SOURCE, gt_mask_dir=None,
+                samples,
+                DATA_DIR,
+                PRED_DIR,
+                CHANNELS,
+                mask_source=MASK_SOURCE,
+                gt_mask_dir=None,
             )
         errors = suggestions_df.attrs.get("errors", [])
 
         if suggestions_df.empty:
             st.session_state["sugg_msg"] = (
                 "error",
-                "No valid samples found. Make sure prediction .npy files "
-                f"exist in: {PRED_DIR}",
+                f"No valid samples found. Make sure prediction .npy files exist in: {PRED_DIR}",
                 errors,
             )
         else:
@@ -391,8 +415,10 @@ def suggestions_panel(region, threshold_mode):
         st.caption("Switch to *Raw intensity* mode to apply suggestions.")
     elif pcols:
         pcol = st.selectbox(
-            "Use as minimum threshold", pcols,
-            index=min(2, len(pcols) - 1), key="apply_pcol",
+            "Use as minimum threshold",
+            pcols,
+            index=min(2, len(pcols) - 1),
+            key="apply_pcol",
         )
         a1, a2 = st.columns(2)
         # Plain buttons + st.rerun (not on_click): the sliders live outside this
@@ -462,9 +488,12 @@ with tab_seg:
                 sys.executable,
                 "-u",
                 "predict.py",
-                "--data-dir", seg_input_dir,
-                "--model-dir", seg_model_dir,
-                "--output-dir", seg_output_dir,
+                "--data-dir",
+                seg_input_dir,
+                "--model-dir",
+                seg_model_dir,
+                "--output-dir",
+                seg_output_dir,
             ]
 
             if not seg_save_vis:
@@ -510,7 +539,9 @@ with tab_seg:
                     else:
                         progress_text.write(f"Processed: {done}")
 
-                log_box.info(f"Current sample: {current_sample}" if current_sample else "Starting...")
+                log_box.info(
+                    f"Current sample: {current_sample}" if current_sample else "Starting..."
+                )
 
             return_code = process.wait()
 
@@ -549,14 +580,18 @@ with tab_tune:
                 st.markdown("##### Sample")
                 c_prev, c_sel, c_next = st.columns([1, 5, 1])
                 with c_prev:
-                    st.button("◀", key="prev_sample", on_click=cb_step_sample, args=(-1,),
-                              width="stretch")
+                    st.button(
+                        "◀", key="prev_sample", on_click=cb_step_sample, args=(-1,), width="stretch"
+                    )
                 with c_next:
-                    st.button("▶", key="next_sample", on_click=cb_step_sample, args=(1,),
-                              width="stretch")
+                    st.button(
+                        "▶", key="next_sample", on_click=cb_step_sample, args=(1,), width="stretch"
+                    )
                 with c_sel:
                     sample = st.selectbox(
-                        "Sample", samples, key="sample_selectbox",
+                        "Sample",
+                        samples,
+                        key="sample_selectbox",
                         label_visibility="collapsed",
                     )
                 st.caption(f"Sample {samples.index(sample) + 1} / {len(samples)}")
@@ -581,12 +616,20 @@ with tab_tune:
 
                 b1, b2 = st.columns(2)
                 with b1:
-                    st.button("Reset tissue", on_click=cb_reset,
-                              args=(region, threshold_mode), width="stretch")
+                    st.button(
+                        "Reset tissue",
+                        on_click=cb_reset,
+                        args=(region, threshold_mode),
+                        width="stretch",
+                    )
                 with b2:
-                    st.button("Copy to all tissues", on_click=cb_copy_to_all,
-                              args=(region, threshold_mode), width="stretch",
-                              help="Apply this tissue's FITC/TRITC ranges to every tissue.")
+                    st.button(
+                        "Copy to all tissues",
+                        on_click=cb_copy_to_all,
+                        args=(region, threshold_mode),
+                        width="stretch",
+                        help="Apply this tissue's FITC/TRITC ranges to every tissue.",
+                    )
 
                 st.caption(
                     "Thresholds for other tissues are kept when you switch tissue — "
@@ -600,8 +643,10 @@ with tab_tune:
                 st.markdown("##### Random spot-check")
                 n_spot = st.number_input(
                     "Number of random samples",
-                    min_value=1, max_value=max(1, len(samples)),
-                    value=min(4, max(1, len(samples))), step=1,
+                    min_value=1,
+                    max_value=max(1, len(samples)),
+                    value=min(4, max(1, len(samples))),
+                    step=1,
                 )
                 s1, s2 = st.columns(2)
                 with s1:
@@ -621,14 +666,17 @@ with tab_tune:
             # View options: one row, one column per option, above the sample title
             v1, v2, v3 = st.columns(3)
             with v1:
-                auto_crop = st.checkbox("Auto-crop to selected tissue", value=True,
-                                        key="auto_crop_preview")
+                auto_crop = st.checkbox(
+                    "Auto-crop to selected tissue", value=True, key="auto_crop_preview"
+                )
             with v2:
-                show_masks = st.checkbox("Show threshold-only masks", value=False,
-                                         key="show_threshold_only")
+                show_masks = st.checkbox(
+                    "Show threshold-only masks", value=False, key="show_threshold_only"
+                )
             with v3:
-                show_hist = st.checkbox("Show intensity distributions", value=True,
-                                        key="show_intensity_hist")
+                show_hist = st.checkbox(
+                    "Show intensity distributions", value=True, key="show_intensity_hist"
+                )
 
             try:
                 raw, bio7 = load_sample_cached(sample, str(DATA_DIR), str(PRED_DIR))
@@ -650,24 +698,28 @@ with tab_tune:
                 for ch in OVERLAY_CHANNELS:
                     lo, hi = thr[(region, ch)]
                     with ch_cols[ch]:
-                        st.image(views["overlays"][ch], caption=f"{ch} overlay",
-                                 width="stretch")
+                        st.image(views["overlays"][ch], caption=f"{ch} overlay", width="stretch")
                         st.caption(f"{views['pct'][ch]:.1f}% of {region} pixels above threshold")
 
                         if show_masks:
-                            st.image(views["thr_only"][ch], caption=f"{ch} threshold only",
-                                     width="stretch")
+                            st.image(
+                                views["thr_only"][ch],
+                                caption=f"{ch} threshold only",
+                                width="stretch",
+                            )
 
                         if show_hist:
                             sugg_row = None
                             if sugg_df is not None and not sugg_df.empty and threshold_mode == RAW:
-                                match = sugg_df[(sugg_df["Tissue"] == region) &
-                                                (sugg_df["Channel"] == ch)]
+                                match = sugg_df[
+                                    (sugg_df["Tissue"] == region) & (sugg_df["Channel"] == ch)
+                                ]
                                 if len(match):
                                     sugg_row = match.iloc[0]
 
-                            fig = density_figure(views["ch_vals"][ch], threshold_mode, ch,
-                                                 region, lo, hi, sugg_row)
+                            fig = density_figure(
+                                views["ch_vals"][ch], threshold_mode, ch, region, lo, hi, sugg_row
+                            )
                             if fig is None:
                                 st.warning(f"No usable {ch} pixels for {region}.")
                             else:
@@ -691,11 +743,17 @@ with tab_tune:
                 with c1:
                     st.image(v["rgb"], caption="Raw", width="stretch")
                 with c2:
-                    st.image(v["overlays"]["FITC"],
-                             caption=f"FITC overlay ({v['pct']['FITC']:.1f}%)", width="stretch")
+                    st.image(
+                        v["overlays"]["FITC"],
+                        caption=f"FITC overlay ({v['pct']['FITC']:.1f}%)",
+                        width="stretch",
+                    )
                 with c3:
-                    st.image(v["overlays"]["TRITC"],
-                             caption=f"TRITC overlay ({v['pct']['TRITC']:.1f}%)", width="stretch")
+                    st.image(
+                        v["overlays"]["TRITC"],
+                        caption=f"TRITC overlay ({v['pct']['TRITC']:.1f}%)",
+                        width="stretch",
+                    )
 
 
 # =========================
@@ -721,8 +779,14 @@ with tab_batch:
             [
                 {
                     "Tissue": t,
-                    **{f"{ch} min{unit}": round(batch_thr[(t, ch)][0] * scale) for ch in OVERLAY_CHANNELS},
-                    **{f"{ch} max{unit}": round(batch_thr[(t, ch)][1] * scale) for ch in OVERLAY_CHANNELS},
+                    **{
+                        f"{ch} min{unit}": round(batch_thr[(t, ch)][0] * scale)
+                        for ch in OVERLAY_CHANNELS
+                    },
+                    **{
+                        f"{ch} max{unit}": round(batch_thr[(t, ch)][1] * scale)
+                        for ch in OVERLAY_CHANNELS
+                    },
                 }
                 for t in TISSUES
             ]
@@ -736,8 +800,9 @@ with tab_batch:
             key="include_thresholds_output",
         )
 
-        run_barrier_batch = st.button(f"Run barrier intensity batch ({len(samples)} samples)",
-                                      type="primary")
+        run_barrier_batch = st.button(
+            f"Run barrier intensity batch ({len(samples)} samples)", type="primary"
+        )
 
         if run_barrier_batch:
             batch_rows = []
@@ -771,14 +836,18 @@ with tab_batch:
                     batch_rows.append(rows)
 
                 except Exception as e:
-                    batch_rows.append({
-                        "Sample": sample_name,
-                        "Species": infer_species(sample_name),
-                        "Error": str(e),
-                    })
+                    batch_rows.append(
+                        {
+                            "Sample": sample_name,
+                            "Species": infer_species(sample_name),
+                            "Error": str(e),
+                        }
+                    )
 
-                progress.progress((i + 1) / len(samples),
-                                  text=f"Processed {i + 1} / {len(samples)}: {sample_name}")
+                progress.progress(
+                    (i + 1) / len(samples),
+                    text=f"Processed {i + 1} / {len(samples)}: {sample_name}",
+                )
 
             progress.empty()
             st.session_state["barrier_batch_df"] = pd.DataFrame(batch_rows)
