@@ -15,3 +15,6 @@ pyarrow==24.0.0
 # test tooling
 pytest
 pytest-playwright
+
+# coverage reporting
+pytest-cov

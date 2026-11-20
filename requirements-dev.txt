@@ -3,3 +3,4 @@
 -r requirements-lint.txt
 pytest
 pytest-playwright
+pytest-cov
