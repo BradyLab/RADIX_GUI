@@ -1,7 +1,7 @@
 """YOLO annotation parsing, polygon→mask conversion, endodermis ring derivation."""
 
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import cv2
 import numpy as np

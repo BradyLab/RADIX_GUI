@@ -10,7 +10,7 @@ Usage:
     bio = cfg.to_bio7(gt, h, w)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Dict, Tuple
 
 import cv2

@@ -3,7 +3,7 @@
 from collections import defaultdict
 from typing import Dict, List, Optional
 
-from .config import TRAIN_DIR, VAL_DIR, TEST_DIR, ONESHOT_DIR, SampleRecord
+from .config import ONESHOT_DIR, TEST_DIR, TRAIN_DIR, VAL_DIR, SampleRecord
 from .dataset import SampleRegistry
 
 MONOCOT_SPECIES = {"Millet", "Rice", "Sorghum"}

@@ -1,7 +1,7 @@
+import numpy as np
 import streamlit as st
 from scipy import ndimage as ndi
-from skimage import morphology, feature, segmentation, measure
-import numpy as np
+from skimage import feature, measure, morphology, segmentation
 
 from .scale_utils import compute_root_scale, scaled_blob_defaults
 

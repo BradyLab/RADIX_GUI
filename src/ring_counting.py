@@ -1,8 +1,5 @@
 import numpy as np
-import cv2
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from scipy import ndimage as ndi
 from scipy.signal import find_peaks, peak_widths
 from skimage import filters
@@ -1041,7 +1038,7 @@ def ring_peak_count(
         review_needed = len(qc_reasons) > 0
         qc_reason = ";".join(qc_reasons)
 
-        likely_missed_cell = (
+        likely_missed_cell = (  # noqa: F841 - computed for upcoming QC logic, not yet used
             (max_to_median_spacing > 1.45 and spacing_cv > 0.20)
             or has_unresolved_wide_peak
         )
@@ -1373,8 +1370,7 @@ def multi_ring_peak_count(
         base["review_needed"] = True
         return base
 
-    all_indices = sorted(set(e["peak_index"] for e in peak_entries))
-    _default_cw = int(0.015 * n_points)   # ~22 idx for n_points=1440
+    _default_cw = int(0.015 * n_points)  # ~22 idx for n_points=1440
 
     # Consensus window strategy is tissue-dependent:
     #

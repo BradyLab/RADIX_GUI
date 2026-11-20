@@ -1,6 +1,6 @@
 """Albumentations pipelines for fluorescence microscopy augmentation."""
 
-from typing import Dict, List, Optional, Tuple
+from typing import Tuple
 
 import albumentations as A
 import numpy as np

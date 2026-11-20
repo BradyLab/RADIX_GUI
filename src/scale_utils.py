@@ -33,7 +33,8 @@ Optional: physical scaling when microscope resolution is known
     scale = compute_root_scale(bio7, um_per_pixel=0.32)
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 import numpy as np
 from skimage.measure import label, regionprops
 

@@ -1,10 +1,11 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from skimage import filters
 from skimage.measure import label, regionprops
-from .io_utils import load_sample
+
 from .annotation_utils import parse_yolo_annotations, polygon_to_mask
+from .io_utils import load_sample
 from .model_classes import get_filled_classes, yolo_overlap_false_to_bio7
 
 # Tissues quantified by the barrier-intensity tools below. Cortex excludes

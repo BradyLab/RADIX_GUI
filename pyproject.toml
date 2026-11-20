@@ -4,13 +4,7 @@
 line-length = 100
 target-version = "py311"
 
-# Only lint/format code this fork owns. Everything else in src/ and predict.py comes
-# from upstream (Olofnovize/RADIX_GUI); reformatting it would conflict with every
-# upstream merge. To opt a file in, add it to this list.
-include = [
-    "GUI.py",
-    "tests/**/*.py",
-]
+# Lints and formats everything in the repo (the fork now tracks upstream directly).
 
 [tool.ruff.lint]
 select = [

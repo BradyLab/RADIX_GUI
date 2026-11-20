@@ -1,5 +1,5 @@
-import numpy as np
 import cv2
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots

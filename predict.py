@@ -1,16 +1,17 @@
 """Deployment inference: DINOv2+DPT on 3-channel microscopy samples."""
 
+import argparse
 import csv
 import sys
-import argparse
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cv2
+import matplotlib
 import numpy as np
 import tifffile
 import torch
-import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 

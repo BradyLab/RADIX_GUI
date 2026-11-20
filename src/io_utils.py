@@ -1,10 +1,10 @@
-import numpy as np
-import tifffile as tiff
 from pathlib import Path
 
-from src.model_classes import unet_semantic_to_bio7
-from src.mask_utils import resize_bio7_to_raw
+import numpy as np
+import tifffile as tiff
 
+from src.mask_utils import resize_bio7_to_raw
+from src.model_classes import unet_semantic_to_bio7
 
 _SPECIES_KEYWORDS = [
     ("sorghum", "Sorghum"),

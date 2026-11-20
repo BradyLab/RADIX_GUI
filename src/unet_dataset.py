@@ -5,7 +5,7 @@ UNetMultilabelDataset: 6-channel multilabel masks (all raw annotation classes at
 UNetBinaryDataset: Per-class binary masks (one raw annotation class at a time).
 """
 
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import albumentations as A
 import cv2

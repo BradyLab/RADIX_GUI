@@ -4,13 +4,13 @@ Model/module definitions extracted from train/train_timm_semantic.py so that
 predict.py and GUI.py do not need the training pipeline (datasets, splits,
 augmentation) to load a checkpoint and run inference.
 """
+
+import pytorch_lightning as pl
+import segmentation_models_pytorch as smp
+import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import timm
-import pytorch_lightning as pl
-
-import segmentation_models_pytorch as smp
 
 NUM_CLASSES = 7
 DEFAULT_LR = 1e-4

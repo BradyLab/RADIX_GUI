@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import tifffile
 
-from .config import CHANNELS, OUTPUT_DIR, SampleRecord
+from .config import OUTPUT_DIR, SampleRecord
 
 
 @dataclass
