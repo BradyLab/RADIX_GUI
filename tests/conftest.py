@@ -57,6 +57,15 @@ def sample_data_dir(tmp_path_factory) -> str:
     return str(data_dir)
 
 
+@pytest.fixture(scope="session")
+def bio7() -> dict:
+    """Bio-7 tissue masks (256x256) derived from the synthetic concentric-ring prediction."""
+    from src.model_classes import unet_semantic_to_bio7
+
+    sem = _make_prediction(256)
+    return unet_semantic_to_bio7(sem, *sem.shape)
+
+
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
