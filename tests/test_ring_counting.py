@@ -14,6 +14,7 @@ from src.ring_counting import (
     multi_ring_peak_count,
     ring_peak_count,
     spacing_sanity_collapse_peaks,
+    suggest_ring_range,
 )
 
 SIZE = 256
@@ -123,3 +124,27 @@ def test_presets_are_well_formed():
         )
     for lo, hi in RING_RANGE_PRESETS.values():
         assert 0 <= lo < hi <= 1
+
+
+def test_suggest_ring_range_ranks_every_preset(bio7):
+    # Regression: this used to raise NameError (enable_spacing_rescue / enable_valley_rescue
+    # were referenced but never declared as parameters).
+    df = suggest_ring_range(
+        _spotted_raw(10),
+        bio7,
+        "Endodermis",
+        "TRITC",
+        ring_width=4,
+        n_points=360,
+        smooth_sigma=2,
+        peak_distance=10,
+        peak_prominence=0.2,
+        local_contrast_threshold=0,
+        peak_width=1,
+        merge_distance=5,
+        ring_consensus_min=2,
+        ring_position_iterations=2,
+    )
+    assert len(df) == len(RING_RANGE_PRESETS)
+    assert set(df["ring_range_label"]) == set(RING_RANGE_PRESETS)
+    assert df["score"].is_monotonic_increasing  # best (lowest score) first

@@ -2601,6 +2601,8 @@ def suggest_ring_range(
     enable_close_doublet_collapse=True,
     auto_peak_distance=False,
     enable_adaptive_peak_cleanup=False,
+    enable_spacing_rescue=False,
+    enable_valley_rescue=False,
 ):
     rows = []
 
