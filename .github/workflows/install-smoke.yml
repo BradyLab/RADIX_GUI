@@ -1,0 +1,65 @@
+name: install-smoke
+
+# The `tests` workflow uses a slim dependency set (requirements-ci.txt) that skips
+# torch, cellpose, ultralytics etc. That keeps PRs fast, but it means a broken pin in
+# requirements.txt would go unnoticed until a user runs install.bat.
+#
+# This workflow does what install.bat / install_RADIX.command do -- pinned CPU torch,
+# then requirements.txt -- and checks that the heavy modules actually import. It is
+# multi-GB, so it runs weekly, on demand, and on PRs that touch the install inputs.
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - requirements.txt
+      - install.bat
+      - install_RADIX.command
+      - .github/workflows/install-smoke.yml
+
+concurrency:
+  group: install-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    name: install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11" # install.bat pins 3.11.x
+
+      # Keep these in sync with TORCH_VERSION & co. in install.bat / install_RADIX.command.
+      - name: Install PyTorch (CPU)
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          EXTRA=""
+          # Linux's default wheel is the multi-GB CUDA build; use the CPU one.
+          if [ "$RUNNER_OS" = "Linux" ]; then EXTRA="--index-url https://download.pytorch.org/whl/cpu"; fi
+          pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 $EXTRA
+
+      - name: Install requirements.txt
+        run: pip install -r requirements.txt
+
+      - name: Check for dependency conflicts
+        run: pip check
+
+      # Everything the slim CI environment can't import.
+      - name: Import heavy dependencies
+        run: python .github/scripts/check_heavy_imports.py
+
+      - name: Unit tests against the full environment
+        run: |
+          pip install pytest
+          python -m pytest tests -v --ignore=tests/test_gui_e2e.py -p no:cacheprovider
