@@ -24,6 +24,65 @@ SPECIES = ["Millet", "Rice", "Sorghum", "Tomato"]
 MICROSCOPES = ["C10", "Olympus", "Zeiss"]
 CHANNELS = ["DAPI", "FITC", "TRITC"]  # Blue, Green, Red
 
+# Filename keywords that identify each channel's TIFF (matched case-insensitively
+# between separators, e.g. "_cw.", "_gfp_", "(rfp)"). Users can add their own via
+# set_channel_aliases() / a channel_names.json file; user entries are additive.
+DEFAULT_CHANNEL_ALIASES = {
+    "FITC": ["FITC", "GFP"],
+    "TRITC": ["TRITC", "RFP"],
+    "DAPI": ["DAPI", "CW", "CALCOFLUOR"],
+}
+CHANNEL_NAMES_FILE = "channel_names.json"
+_user_channel_aliases: dict[str, list[str]] = {}
+
+
+def _clean_aliases(value) -> list[str]:
+    if isinstance(value, str):
+        value = value.split(",")
+    return [str(v).strip() for v in (value or []) if str(v).strip()]
+
+
+def set_channel_aliases(overrides: dict | None) -> None:
+    """Replace the user-defined channel keywords (e.g. {"DAPI": "cell_wall"}).
+
+    Keys are the canonical channel names (DAPI/FITC/TRITC); values are a string
+    (comma-separated allowed) or a list. Pass None/{} to clear.
+    """
+    _user_channel_aliases.clear()
+    for ch, val in (overrides or {}).items():
+        names = _clean_aliases(val)
+        if names:
+            _user_channel_aliases[ch.upper()] = names
+
+
+def get_channel_aliases(channel: str) -> list[str]:
+    """User keywords first, then the built-in defaults for ``channel``."""
+    key = channel.upper()
+    out: list[str] = []
+    for a in _user_channel_aliases.get(key, []) + DEFAULT_CHANNEL_ALIASES.get(key, [channel]):
+        if a.lower() not in (x.lower() for x in out):
+            out.append(a)
+    return out
+
+
+def get_user_channel_aliases() -> dict[str, list[str]]:
+    return {k: list(v) for k, v in _user_channel_aliases.items()}
+
+
+def load_channel_aliases_file(folder: Path) -> dict[str, list[str]]:
+    """Read ``channel_names.json`` from ``folder`` (or its parent); {} if absent/invalid."""
+    import json
+
+    for d in (Path(folder), Path(folder).parent):
+        f = d / CHANNEL_NAMES_FILE
+        if f.is_file():
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                return {k.upper(): _clean_aliases(v) for k, v in data.items()}
+            except (OSError, ValueError, AttributeError):
+                return {}
+    return {}
+
 # ── Annotated classes (as stored in .txt files) ───────────────────────────────
 ANNOTATED_CLASSES = {
     0: "Whole Root",

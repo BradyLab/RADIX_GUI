@@ -5,7 +5,8 @@ import pandas as pd
 from skimage.measure import label, regionprops
 
 from .annotation_utils import parse_yolo_annotations, polygon_to_mask
-from .io_utils import load_sample
+from .config import get_channel_aliases
+from .io_utils import load_sample, match_channel_file
 from .model_classes import get_filled_classes, yolo_overlap_false_to_bio7
 
 # Tissues quantified by the barrier-intensity tools below. Cortex excludes
@@ -51,17 +52,22 @@ def _load_gt_bio7(sample_name, data_dir, gt_mask_dir, channels):
     # Find raw TIF files
     raw_channels = []
     sample_dir = None
-    for p in data_dir.rglob(f"{sample_name}_TRITC.tif"):
-        sample_dir = p.parent
-        break
+    for p in data_dir.rglob(f"{sample_name}_*.tif*"):
+        if match_channel_file([p], "TRITC") is not None:
+            sample_dir = p.parent
+            break
 
     if sample_dir is None:
         raise FileNotFoundError(f"No image folder found for {sample_name}")
 
+    sample_tifs = list(sample_dir.glob(f"{sample_name}_*.tif*"))
     for ch in ch_order:
-        ch_path = sample_dir / f"{sample_name}_{ch}.tif"
-        if not ch_path.exists():
-            raise FileNotFoundError(f"Missing {ch} image: {ch_path}")
+        ch_path = match_channel_file(sample_tifs, ch)
+        if ch_path is None:
+            raise FileNotFoundError(
+                f"Missing {ch} image for {sample_name} in {sample_dir} "
+                f"(tried keywords: {get_channel_aliases(ch)})"
+            )
         img = tifffile.imread(str(ch_path))
         img = np.squeeze(img)
         if img.ndim == 3:

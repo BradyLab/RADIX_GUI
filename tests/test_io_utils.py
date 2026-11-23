@@ -56,3 +56,19 @@ def test_load_sample_returns_bio7_resized_to_raw(sample_data_dir, tmp_path):
     assert raw.shape[:2] == (256, 256)
     assert all(m.shape == (256, 256) for m in bio7.values())
     assert bio7["Whole Root"].sum() == 128 * 128  # 64x64 block, doubled in each axis
+
+
+def test_custom_channel_keyword_matches_and_defaults_still_work():
+    from pathlib import Path
+
+    from src.config import set_channel_aliases
+    from src.io_utils import match_channel_file
+
+    files = [Path("s1_cell_wall.tif"), Path("s1_FITC.tif"), Path("s1_TRITC.tif")]
+    try:
+        assert match_channel_file(files, "DAPI") is None
+        set_channel_aliases({"DAPI": "cell_wall"})
+        assert match_channel_file(files, "DAPI") == Path("s1_cell_wall.tif")
+        assert match_channel_file(files, "FITC") == Path("s1_FITC.tif")
+    finally:
+        set_channel_aliases(None)
