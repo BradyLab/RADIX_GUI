@@ -4,7 +4,7 @@
 line-length = 100
 target-version = "py311"
 
-# Lints and formats everything in the repo (the fork now tracks upstream directly).
+# Lints and formats everything in the repo.
 
 [tool.ruff.lint]
 select = [
