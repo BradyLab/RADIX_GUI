@@ -1,6 +1,6 @@
 # Minimal dependencies for CI: just what GUI.py and the tests import.
 # The GUI never imports torch/cellpose/etc., so CI skips those multi-GB installs.
-# Versions match requirements.txt; keep them in sync when you bump those.
+# Versions must match requirements.txt (enforced by tests/test_requirements_sync.py).
 streamlit==1.59.0
 numpy==1.26.4
 pandas==3.0.3
