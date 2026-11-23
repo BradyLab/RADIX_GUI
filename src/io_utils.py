@@ -20,27 +20,11 @@ CHANNEL_ALIASES = {
 }
 
 
-def _safe_child(base_dir, name):
-    """Join `name` onto `base_dir`, refusing anything that escapes it.
-
-    Sample names are a single folder/file stem, so separators, drive letters
-    and '..' have no legitimate use and are rejected.
-    """
-    name = str(name)
-    if not name or name in {".", ".."} or Path(name).name != name or "/" in name or "\\" in name:
-        raise ValueError(f"Invalid sample name: {name!r}")
-    base = Path(base_dir).resolve()
-    child = (base / name).resolve()
-    if base != child and base not in child.parents:
-        raise ValueError(f"Sample name escapes its folder: {name!r}")
-    return child
-
-
 def load_raw_tiff_sample(sample_name, data_dir, channels):
     channel_imgs = []
-    data_dir = Path(data_dir).resolve()
+    data_dir = Path(data_dir)
 
-    sample_dir = _safe_child(data_dir, sample_name)
+    sample_dir = data_dir / sample_name
 
     if sample_dir.exists():
         search_root = sample_dir
@@ -83,8 +67,8 @@ def load_raw_tiff_sample(sample_name, data_dir, channels):
 def load_sample(sample_name, data_dir, pred_dir, channels):
     raw = load_raw_tiff_sample(sample_name, data_dir, channels)
 
-    pred_dir = Path(pred_dir).resolve()
-    sem = np.load(_safe_child(pred_dir, f"{sample_name}.npy"), allow_pickle=False)
+    pred_dir = Path(pred_dir)
+    sem = np.load(pred_dir / f"{sample_name}.npy")
 
     bio7 = unet_semantic_to_bio7(sem, *sem.shape)
     bio7 = resize_bio7_to_raw(bio7, raw.shape)
