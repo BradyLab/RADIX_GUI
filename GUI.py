@@ -9,6 +9,7 @@ import streamlit as st
 
 from src.config import (
     CHANNEL_NAMES_FILE,
+    get_channel_aliases,
     get_user_channel_aliases,
     load_channel_aliases_file,
     set_channel_aliases,
@@ -24,6 +25,7 @@ from src.intensity_quant import (
 from src.io_utils import (
     infer_species,
     load_sample,
+    match_channel_file,
 )
 from src.plotting_utils import (
     crop_to_mask,
@@ -144,6 +146,28 @@ def load_sample_cached(sample_name, data_dir, pred_dir, alias_key=()):
     filename keywords re-reads the TIFFs.
     """
     return load_sample(sample_name, Path(data_dir), Path(pred_dir), CHANNELS)
+
+
+@st.cache_data(show_spinner=False)
+def scan_image_folders(data_dir, alias_key=()):
+    """Which sample folders have all 3 channel TIFFs (same rules as predict.py).
+
+    alias_key only participates in the cache key (see load_sample_cached).
+    """
+    ready, incomplete = [], []
+    root = Path(data_dir)
+    if not root.is_dir():
+        return ready, incomplete
+    for sub in sorted(root.iterdir()):
+        if not sub.is_dir() or sub.name.startswith("."):
+            continue
+        tifs = [p for ext in ("*.tif", "*.tiff") for p in sub.glob(ext)]
+        missing = [ch for ch in CHANNELS if match_channel_file(tifs, ch) is None]
+        if missing:
+            incomplete.append((sub.name, missing))
+        else:
+            ready.append(sub.name)
+    return ready, incomplete
 
 
 def _mode_suffix(mode):
@@ -484,6 +508,16 @@ with tab_seg:
     if flash:
         st.success(flash)
 
+    _ready, _incomplete = scan_image_folders(str(DATA_DIR), ALIAS_KEY)
+    st.caption(
+        f"{len(_ready)} image folder(s) in `{DATA_DIR}` have all 3 channels "
+        f"(using the channel file names in the sidebar)."
+    )
+    if _incomplete:
+        with st.expander(f"{len(_incomplete)} folder(s) missing a channel"):
+            for _name, _missing in _incomplete:
+                st.write(f"`{_name}` — no file found for {', '.join(_missing)}")
+
     if samples:
         st.caption(f"{len(samples)} prediction file(s) already found in `{PRED_DIR}`.")
     else:
@@ -527,6 +561,10 @@ with tab_seg:
 
             if not seg_save_vis:
                 cmd.append("--no-vis")
+
+            # predict.py runs in its own process, so hand it the channel keywords
+            for _ch, _names in get_user_channel_aliases().items():
+                cmd += [f"--{_ch.lower()}-name", ",".join(_names)]
 
             with st.expander("Show command", expanded=False):
                 st.code(" ".join(cmd))
