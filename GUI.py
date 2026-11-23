@@ -9,7 +9,6 @@ import streamlit as st
 
 from src.config import (
     CHANNEL_NAMES_FILE,
-    get_channel_aliases,
     get_user_channel_aliases,
     load_channel_aliases_file,
     set_channel_aliases,
