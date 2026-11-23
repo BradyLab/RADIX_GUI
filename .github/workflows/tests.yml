@@ -9,6 +9,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+
 # A new push to the same PR cancels the older run.
 concurrency:
   group: tests-${{ github.ref }}
