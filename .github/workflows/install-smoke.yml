@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11" # install.bat pins 3.11.x
+          python-version: "3.12" # install.bat pins 3.12.x
 
       # Keep these in sync with TORCH_VERSION & co. in install.bat / install_RADIX.command.
       - name: Install PyTorch (CPU)

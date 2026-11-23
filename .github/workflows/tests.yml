@@ -25,7 +25,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       # Only ruff is needed (no project deps), so this job finishes in seconds.
       # Fix locally with:  ruff check --fix . && ruff format .
@@ -43,7 +43,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-typecheck.txt
 
@@ -70,7 +70,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"   # same as install.bat
+          python-version: "3.12"   # same as install.bat
           cache: pip
           cache-dependency-path: requirements-ci.txt
 
