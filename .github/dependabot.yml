@@ -1,0 +1,43 @@
+# Dependabot opens pull requests for outdated pins. It never merges anything: there is
+# no auto-merge configured here, and none should be added -- every PR needs a human look,
+# because requirements.txt is a set of versions "verified working together".
+#
+# What checks a Dependabot PR automatically:
+#   - tests / typecheck / lint  -> slim environment, all three OSes
+#   - install-smoke             -> real requirements.txt + pinned torch (runs on PRs that
+#                                  touch requirements.txt)
+#   - tests/test_requirements_sync.py -> fails if requirements-ci.txt and requirements.txt
+#                                  end up pinning different versions of the same package
+version: 2
+
+updates:
+  - package-ecosystem: pip
+    directory: "/" # picks up every requirements*.txt here, including those pulled in with -r
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    ignore:
+      # install.bat / install_RADIX.command deliberately keep numpy under 2.0 (the pinned
+      # torch 2.5.1 stack was built against numpy 1.x). Take numpy 2 as a deliberate
+      # migration, not as a bot PR. Minor/patch updates of numpy 1.x still come through.
+      - dependency-name: numpy
+        update-types: ["version-update:semver-major"]
+    groups:
+      # One PR per week for all minor/patch bumps instead of ~100 separate ones.
+      # Major bumps stay as individual PRs so each can be judged on its own.
+      python-minor-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/" # scans .github/workflows
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns: ["*"]
