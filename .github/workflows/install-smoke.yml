@@ -39,6 +39,18 @@ jobs:
         with:
           python-version: "3.12" # install.bat pins 3.12.x
 
+      # Install into a clean virtual environment, like the conda env real users get.
+      # The runner's own Python comes with tools preinstalled (e.g. pipx), and
+      # `pip check` would otherwise report conflicts between *their* requirements and
+      # our pins (such as filelock / packaging) that have nothing to do with RADIX.
+      - name: Create clean virtual environment
+        shell: bash
+        run: |
+          VENV="$RUNNER_TEMP/venv"
+          python -m venv "$VENV"
+          if [ "$RUNNER_OS" = "Windows" ]; then BIN="$(cygpath -w "$VENV/Scripts")"; else BIN="$VENV/bin"; fi
+          echo "$BIN" >> "$GITHUB_PATH"  # later steps' python / pip now resolve to the venv
+
       # Keep these in sync with TORCH_VERSION & co. in install.bat / install_RADIX.command.
       - name: Install PyTorch (CPU)
         shell: bash
