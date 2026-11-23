@@ -40,7 +40,7 @@ call "%CONDA_EXE%" tos accept --override-channels --channel https://repo.anacond
 
 :: -- Create environment (skip if it already exists) ---------------
 :: -- Pinned to the exact Python version this was tested against. --
-set PYTHON_VERSION=3.11.15
+set PYTHON_VERSION=3.12.16
 call "%CONDA_EXE%" env list | findstr /R /C:"^%ENV_NAME% " >nul
 if errorlevel 1 (
     :: --override-channels -c conda-forge avoids Anaconda's defaults

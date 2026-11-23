@@ -1,5 +1,5 @@
 # RADIX environment spec.
-# Tested against Python 3.11.15. install.bat creates the conda env pinned to
+# Tested against Python 3.12.16. install.bat creates the conda env pinned to
 # this exact Python version, and installs torch/torchvision/torchaudio
 # separately (CUDA build if an NVIDIA GPU is detected, CPU build otherwise) --
 # see install.bat for those pinned versions. Everything below is pinned to
