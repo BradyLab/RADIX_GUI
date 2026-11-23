@@ -15,7 +15,6 @@ _SPECIES_KEYWORDS = [
 ]
 
 
-
 def match_channel_file(files, channel):
     """Return the first file (sorted) whose name carries a keyword for ``channel``.
 

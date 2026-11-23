@@ -83,6 +83,7 @@ def load_channel_aliases_file(folder: Path) -> dict[str, list[str]]:
                 return {}
     return {}
 
+
 # ── Annotated classes (as stored in .txt files) ───────────────────────────────
 ANNOTATED_CLASSES = {
     0: "Whole Root",
