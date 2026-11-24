@@ -16,7 +16,7 @@ annotated-types==0.8.0
 anyio==4.16.0
 attrs==26.1.0
 blinker==1.9.0
-cachetools==7.1.4
+cachetools==8.0.2
 cellpose==4.2.1.1
 certifi==2026.11.20
 charset-normalizer==3.5.3
