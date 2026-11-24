@@ -66,6 +66,22 @@ class TestMorphometrics:
         assert np.isnan(m["aerenchyma_mean_pocket_area_px"])
 
 
+def test_barrier_intensity_imputed_channel_is_nan_other_channel_measured(bio7):
+    from src.intensity_quant import BARRIER_TISSUES, measure_barrier_intensity_batch
+
+    shape = bio7["Whole Root"].shape
+    raw = np.full((*shape, 3), 1000.0, dtype=np.float32)
+    raw[..., 0] = 0.0  # TRITC zero-filled
+    thr = {(t, ch): (0.0, np.inf) for t in BARRIER_TISSUES for ch in ("TRITC", "FITC")}
+
+    rows = measure_barrier_intensity_batch(
+        raw, bio7, "Raw intensity", thr, imputed_channels=("TRITC",)
+    )
+    assert np.isnan(rows["Endodermis_TRITC_raw_mean"])
+    assert np.isnan(rows["Endodermis_FITC_TRITC_ratio"])
+    assert rows["Endodermis_FITC_raw_mean"] == pytest.approx(1000.0)
+
+
 class TestBarrierCompleteness:
     """Completeness = fraction of angular sectors with above-threshold signal."""
 
@@ -102,6 +118,18 @@ class TestBarrierCompleteness:
         raw = np.zeros((*bio7["Whole Root"].shape, 3), dtype=np.float32)
         out = measure_barrier_completeness(raw, bio7, self.THR, "Raw intensity", n_angles=60)
         assert out["Endodermis_TRITC_completeness"] == 0.0
+
+    def test_imputed_channel_is_nan(self, bio7):
+        out = measure_barrier_completeness(
+            self._raw_with_signal(bio7, 1.0),
+            bio7,
+            self.THR,
+            "Raw intensity",
+            n_angles=60,
+            imputed_channels=("TRITC",),
+        )
+        assert np.isnan(out["Endodermis_TRITC_completeness"])
+        assert np.isnan(out["Endodermis_TRITC_completeness_pct"])
 
     def test_empty_root_returns_empty_dict(self):
         empty = {"Whole Root": np.zeros((20, 20), np.uint8)}

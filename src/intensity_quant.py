@@ -6,7 +6,7 @@ from skimage.measure import label, regionprops
 
 from .annotation_utils import parse_yolo_annotations, polygon_to_mask
 from .config import get_channel_aliases
-from .io_utils import load_sample, match_channel_file
+from .io_utils import get_missing_channels, load_sample, match_channel_file
 from .model_classes import get_filled_classes, yolo_overlap_false_to_bio7
 
 # Tissues quantified by the barrier-intensity tools below. Cortex excludes
@@ -116,12 +116,25 @@ def compute_threshold_percentile_suggestions(
     rows = []
     errors = []
 
+    missing_by_sample = {}
+    if mask_source != "GT YOLO (.txt)":
+        for sample_name in samples:
+            try:
+                missing_by_sample[sample_name] = get_missing_channels(
+                    sample_name, data_dir, channels
+                )
+            except Exception:
+                pass  # surfaced by the load below
+
     for tissue in BARRIER_TISSUES:
         for ch in ["FITC", "TRITC"]:
             vals_all = []
 
             for sample_name in samples:
                 try:
+                    # A zero-filled channel carries no signal; don't pool it
+                    if ch in missing_by_sample.get(sample_name, ()):
+                        continue
                     if mask_source == "GT YOLO (.txt)":
                         if not gt_mask_dir:
                             raise ValueError("gt_mask_dir must be set for GT mode")
@@ -330,7 +343,9 @@ def measure_barrier_intensity_batch(
     bio7,
     threshold_mode,
     threshold_dict,
+    imputed_channels=(),
 ):
+    """``imputed_channels`` were zero-filled (absent TIFF): their stats are NaN."""
     ch_idx = {"TRITC": 0, "FITC": 1, "DAPI": 2}
     rows = {}
 
@@ -339,6 +354,17 @@ def measure_barrier_intensity_batch(
 
         for ch in ["TRITC", "FITC"]:
             prefix = f"{tissue}_{ch}"
+
+            if ch in imputed_channels:
+                for stat in (
+                    "raw_mean",
+                    "raw_std",
+                    "signal_spatial_cv",
+                    "thresholded_raw_mean",
+                    "thresholded_frac",
+                ):
+                    rows[f"{prefix}_{stat}"] = np.nan
+                continue
 
             img_raw = raw[..., ch_idx[ch]].astype(np.float32)
             img_norm = normalize_channel(img_raw)
@@ -385,7 +411,9 @@ def measure_barrier_intensity_batch(
     return rows
 
 
-def measure_barrier_completeness(raw, bio7, threshold_dict, threshold_mode, n_angles=360):
+def measure_barrier_completeness(
+    raw, bio7, threshold_dict, threshold_mode, n_angles=360, imputed_channels=()
+):
     """
     Compute barrier signal completeness for each barrier tissue.
 
@@ -432,7 +460,7 @@ def measure_barrier_completeness(raw, bio7, threshold_dict, threshold_mode, n_an
 
         for ch in ["FITC", "TRITC"]:
             key = f"{tissue}_{ch}"
-            if not tissue_mask.any():
+            if not tissue_mask.any() or ch in imputed_channels:
                 rows[f"{key}_completeness"] = np.nan
                 rows[f"{key}_completeness_pct"] = np.nan
                 continue
