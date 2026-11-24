@@ -105,10 +105,9 @@ def load_sample_3ch(channels: dict):
     Zeros match the model's channel-dropout training. normalize_percentile maps
     a constant channel to 0, so the zero fill survives normalization.
     """
-    stacks = [load_channel(channels[ch]) if ch in channels else None for ch in CHANNEL_NAMES]
-    ref = next(s for s in stacks if s is not None)
-    stacks = [np.zeros_like(ref) if s is None else s for s in stacks]
-    return np.stack(stacks, axis=-1)
+    loaded = {ch: load_channel(channels[ch]) for ch in CHANNEL_NAMES if ch in channels}
+    ref = next(iter(loaded.values()))
+    return np.stack([loaded.get(ch, np.zeros_like(ref)) for ch in CHANNEL_NAMES], axis=-1)
 
 
 def normalize_percentile(img: np.ndarray, p_low=1.0, p_high=99.5):
