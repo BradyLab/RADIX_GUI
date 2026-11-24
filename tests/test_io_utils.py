@@ -45,6 +45,48 @@ def test_missing_channel_raises_with_helpful_message(tmp_path):
         load_raw_tiff_sample("S1", tmp_path, ["FITC"])
 
 
+def _write_channels(root, name, channels, value=5):
+    d = root / name
+    d.mkdir()
+    for ch in channels:
+        tifffile.imwrite(d / f"{name}_{ch}.tif", np.full((8, 8), value, dtype=np.uint16))
+
+
+def test_one_missing_channel_is_zero_filled_in_its_slot(tmp_path):
+    _write_channels(tmp_path, "S1", ["DAPI", "FITC"])  # no TRITC
+    raw = load_raw_tiff_sample("S1", tmp_path, ["TRITC", "FITC", "DAPI"])
+    assert raw.shape == (8, 8, 3)
+    assert raw.dtype == np.uint16
+    assert (raw[..., 0] == 0).all()  # TRITC slot zero-filled, not shifted
+    assert (raw[..., 1] == 5).all() and (raw[..., 2] == 5).all()
+
+
+def test_two_missing_channels_still_raises(tmp_path):
+    _write_channels(tmp_path, "S1", ["DAPI"])
+    with pytest.raises(FileNotFoundError, match="TRITC"):
+        load_raw_tiff_sample("S1", tmp_path, ["TRITC", "FITC", "DAPI"])
+
+
+def test_get_missing_channels_and_is_segmentable(tmp_path):
+    from src.io_utils import get_missing_channels, is_segmentable, missing_channels
+
+    chans = ["TRITC", "FITC", "DAPI"]
+    _write_channels(tmp_path, "two", ["DAPI", "FITC"])
+    _write_channels(tmp_path, "one", ["DAPI"])
+    _write_channels(tmp_path, "three", chans)
+
+    assert get_missing_channels("two", tmp_path, chans) == ["TRITC"]
+    assert get_missing_channels("three", tmp_path, chans) == []
+
+    def files(n):
+        return list((tmp_path / n).glob("*.tif"))
+
+    assert is_segmentable(files("three"), chans)
+    assert is_segmentable(files("two"), chans)
+    assert not is_segmentable(files("one"), chans)
+    assert missing_channels(files("one"), chans) == ["TRITC", "FITC"]
+
+
 def test_load_sample_returns_bio7_resized_to_raw(sample_data_dir, tmp_path):
     pred_dir = tmp_path / "pred"
     pred_dir.mkdir()

@@ -23,6 +23,9 @@ OUTPUT_DIR = BASE_DIR / "output"  # training runs, exports, checkpoints
 SPECIES = ["Millet", "Rice", "Sorghum", "Tomato"]
 MICROSCOPES = ["C10", "Olympus", "Zeiss"]
 CHANNELS = ["DAPI", "FITC", "TRITC"]  # Blue, Green, Red
+# The model was trained with single-channel dropout (zero-filled), so a sample
+# missing at most this many channels is still segmented (missing -> zeros).
+MAX_MISSING_CHANNELS = 1
 
 # Filename keywords that identify each channel's TIFF (matched case-insensitively
 # between separators, e.g. "_cw.", "_gfp_", "(rfp)"). Users can add their own via
