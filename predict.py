@@ -17,7 +17,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from src.config import load_channel_aliases_file, set_channel_aliases
-from src.io_utils import match_channel_file
+from src.io_utils import is_segmentable, match_channel_file
 from src.lightning_module import TimmSemanticModule
 from src.model_classes import (
     BIO_7_COLORS_RGB,
@@ -81,11 +81,13 @@ def discover_samples(data_dir: Path):
             if found is not None:
                 channels[ch] = found
 
-        if len(channels) == 3:
+        absent = [ch for ch in CHANNEL_NAMES if ch not in channels]
+        if is_segmentable(all_tifs, CHANNEL_NAMES):
+            if absent:
+                print(f"  [note] {sub.name}: missing {absent}; zero-filling for segmentation")
             samples.append((sub.name, channels))
         else:
-            missing = set(CHANNEL_NAMES) - set(channels)
-            print(f"  [skip] {sub.name}: missing channels {missing}")
+            print(f"  [skip] {sub.name}: missing channels {absent}")
 
     return samples
 
@@ -98,7 +100,14 @@ def load_channel(path: Path) -> np.ndarray:
 
 
 def load_sample_3ch(channels: dict):
-    stacks = [load_channel(channels[ch]) for ch in CHANNEL_NAMES]
+    """Stack channels in CHANNEL_NAMES order; absent channels become zeros.
+
+    Zeros match the model's channel-dropout training. normalize_percentile maps
+    a constant channel to 0, so the zero fill survives normalization.
+    """
+    stacks = [load_channel(channels[ch]) if ch in channels else None for ch in CHANNEL_NAMES]
+    ref = next(s for s in stacks if s is not None)
+    stacks = [np.zeros_like(ref) if s is None else s for s in stacks]
     return np.stack(stacks, axis=-1)
 
 
@@ -207,7 +216,9 @@ def save_vis(rgb_u8, bio7, sample_name, out_path):
     plt.close(fig)
 
 
-def measure(sample_name: str, raw_img: np.ndarray, bio7: dict) -> dict:
+def measure(sample_name: str, raw_img: np.ndarray, bio7: dict, imputed: tuple | list = ()) -> dict:
+    """Per-region mean intensities. Channels in ``imputed`` were zero-filled, so
+    their intensities are NaN rather than a fake 0."""
     h, w = raw_img.shape[:2]
     mh, mw = bio7["Whole Root"].shape[:2]
 
@@ -221,6 +232,7 @@ def measure(sample_name: str, raw_img: np.ndarray, bio7: dict) -> dict:
     row = {
         "sample_id": sample_name,
         "aerenchyma_ratio": aer_ratio,
+        "imputed_channels": ";".join(imputed),
     }
 
     ch_idx = {"TRITC": 0, "FITC": 1, "DAPI": 2}
@@ -233,6 +245,9 @@ def measure(sample_name: str, raw_img: np.ndarray, bio7: dict) -> dict:
             mask = mask & ~(bio7["Aerenchyma"] > 0)
 
         for ch in ("DAPI", "FITC", "TRITC"):
+            if ch in imputed:
+                row[f"{region.lower()}_{ch}"] = float("nan")
+                continue
             channel_img = raw_img[..., ch_idx[ch]]
             val = float(channel_img[mask].mean()) if mask.any() else 0.0
             row[f"{region.lower()}_{ch}"] = val
@@ -376,9 +391,10 @@ def main():
         if save_visualizations:
             save_vis(to_uint8(norm), bio7_full, sample_name, out_dir / "vis" / f"{sample_name}.png")
 
-        rows.append(measure(sample_name, raw_crop, bio7_crop))
+        imputed = [ch for ch in CHANNEL_NAMES if ch not in channels]
+        rows.append(measure(sample_name, raw_crop, bio7_crop, imputed))
 
-    cols = ["sample_id", "aerenchyma_ratio"]
+    cols = ["sample_id", "aerenchyma_ratio", "imputed_channels"]
 
     for region in MEASURED_REGIONS:
         for ch in ("DAPI", "FITC", "TRITC"):
