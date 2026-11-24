@@ -22,9 +22,11 @@ from src.intensity_quant import (
     normalize_percentile_rgb,
 )
 from src.io_utils import (
+    get_missing_channels,
     infer_species,
+    is_segmentable,
     load_sample,
-    match_channel_file,
+    missing_channels,
 )
 from src.plotting_utils import (
     crop_to_mask,
@@ -149,24 +151,31 @@ def load_sample_cached(sample_name, data_dir, pred_dir, alias_key=()):
 
 @st.cache_data(show_spinner=False)
 def scan_image_folders(data_dir, alias_key=()):
-    """Which sample folders have all 3 channel TIFFs (same rules as predict.py).
+    """Which sample folders can be segmented (same rules as predict.py).
+
+    Returns (ready, zero_filled, incomplete): ``ready`` has every channel,
+    ``zero_filled`` is [(name, missing)] for folders missing few enough channels
+    to run with zeros in their place, ``incomplete`` is [(name, missing)] for
+    folders that can't be segmented.
 
     alias_key only participates in the cache key (see load_sample_cached).
     """
-    ready, incomplete = [], []
+    ready, zero_filled, incomplete = [], [], []
     root = Path(data_dir)
     if not root.is_dir():
-        return ready, incomplete
+        return ready, zero_filled, incomplete
     for sub in sorted(root.iterdir()):
         if not sub.is_dir() or sub.name.startswith("."):
             continue
         tifs = [p for ext in ("*.tif", "*.tiff") for p in sub.glob(ext)]
-        missing = [ch for ch in CHANNELS if match_channel_file(tifs, ch) is None]
-        if missing:
-            incomplete.append((sub.name, missing))
-        else:
+        missing = missing_channels(tifs, CHANNELS)
+        if not missing:
             ready.append(sub.name)
-    return ready, incomplete
+        elif is_segmentable(tifs, CHANNELS):
+            zero_filled.append((sub.name, missing))
+        else:
+            incomplete.append((sub.name, missing))
+    return ready, zero_filled, incomplete
 
 
 def _mode_suffix(mode):
@@ -507,13 +516,23 @@ with tab_seg:
     if flash:
         st.success(flash)
 
-    _ready, _incomplete = scan_image_folders(str(DATA_DIR), ALIAS_KEY)
+    _ready, _zero_filled, _incomplete = scan_image_folders(str(DATA_DIR), ALIAS_KEY)
     st.caption(
         f"{len(_ready)} image folder(s) in `{DATA_DIR}` have all 3 channels "
         f"(using the channel file names in the sidebar)."
     )
+    if _zero_filled:
+        with st.expander(
+            f"{len(_zero_filled)} folder(s) missing one channel (will be zero-filled)"
+        ):
+            st.caption(
+                "The model was trained with single-channel dropout, so these are still "
+                "segmented. Intensity measurements for the missing channel are left blank (NaN)."
+            )
+            for _name, _missing in _zero_filled:
+                st.write(f"`{_name}` — no file found for {', '.join(_missing)}")
     if _incomplete:
-        with st.expander(f"{len(_incomplete)} folder(s) missing a channel"):
+        with st.expander(f"{len(_incomplete)} folder(s) skipped (too many channels missing)"):
             for _name, _missing in _incomplete:
                 st.write(f"`{_name}` — no file found for {', '.join(_missing)}")
 
@@ -748,12 +767,15 @@ with tab_tune:
             try:
                 raw, bio7 = load_sample_cached(sample, str(DATA_DIR), str(PRED_DIR), ALIAS_KEY)
                 views = compute_views(raw, bio7, region, threshold_mode, thr, auto_crop)
+                absent = get_missing_channels(sample, DATA_DIR, CHANNELS)
             except Exception as e:
                 st.error(f"Could not load {sample}: {e}")
                 views = None
 
             if views is not None:
                 st.subheader(f"{sample} — {region}")
+                if absent:
+                    st.info(f"No {', '.join(absent)} file for this sample (zero-filled).")
                 col_raw, col_fitc, col_tritc = st.columns(3)
                 ch_cols = {"FITC": col_fitc, "TRITC": col_tritc}
 
@@ -764,6 +786,10 @@ with tab_tune:
 
                 for ch in OVERLAY_CHANNELS:
                     lo, hi = thr[(region, ch)]
+                    if ch in absent:
+                        with ch_cols[ch]:
+                            st.caption(f"{ch}: no image for this sample")
+                        continue
                     with ch_cols[ch]:
                         st.image(views["overlays"][ch], caption=f"{ch} overlay", width="stretch")
                         st.caption(f"{views['pct'][ch]:.1f}% of {region} pixels above threshold")
@@ -803,6 +829,7 @@ with tab_tune:
                         name, str(DATA_DIR), str(PRED_DIR), ALIAS_KEY
                     )
                     v = compute_views(raw_i, bio7_i, region, threshold_mode, thr, auto_crop)
+                    absent_i = get_missing_channels(name, DATA_DIR, CHANNELS)
                 except Exception as e:
                     st.warning(f"{name}: {e}")
                     continue
@@ -811,18 +838,16 @@ with tab_tune:
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     st.image(v["rgb"], caption="Raw", width="stretch")
-                with c2:
-                    st.image(
-                        v["overlays"]["FITC"],
-                        caption=f"FITC overlay ({v['pct']['FITC']:.1f}%)",
-                        width="stretch",
-                    )
-                with c3:
-                    st.image(
-                        v["overlays"]["TRITC"],
-                        caption=f"TRITC overlay ({v['pct']['TRITC']:.1f}%)",
-                        width="stretch",
-                    )
+                for col, ch in ((c2, "FITC"), (c3, "TRITC")):
+                    with col:
+                        if ch in absent_i:
+                            st.caption(f"{ch}: no image for this sample")
+                        else:
+                            st.image(
+                                v["overlays"][ch],
+                                caption=f"{ch} overlay ({v['pct'][ch]:.1f}%)",
+                                width="stretch",
+                            )
 
 
 # =========================
@@ -881,14 +906,17 @@ with tab_batch:
                 try:
                     raw_i, bio7_i = load_sample(sample_name, DATA_DIR, PRED_DIR, CHANNELS)
 
+                    imputed_i = get_missing_channels(sample_name, DATA_DIR, CHANNELS)
                     rows = measure_barrier_intensity_batch(
                         raw_i,
                         bio7_i,
                         threshold_mode,
                         batch_thr,
+                        imputed_channels=imputed_i,
                     )
 
                     rows["Sample"] = sample_name
+                    rows["Imputed_channels"] = ";".join(imputed_i)
                     rows["Species"] = infer_species(sample_name)
                     rows["Mask_source"] = MASK_SOURCE
                     # Root geometry + tissue areas, incl. aerenchyma (pixel units)
