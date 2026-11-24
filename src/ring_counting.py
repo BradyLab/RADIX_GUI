@@ -1,14 +1,10 @@
 import numpy as np
-import cv2
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from scipy import ndimage as ndi
 from scipy.signal import find_peaks, peak_widths
 from skimage import filters
 
 from .scale_utils import compute_root_scale, scaled_ring_defaults
-
 
 COUNT_PRESETS = {
     "Conservative": {
@@ -37,6 +33,7 @@ RING_RANGE_PRESETS = {
     "Outer 0.40–0.80": (0.40, 0.80),
     "Very outer 0.50–0.90": (0.50, 0.90),
 }
+
 
 def spacing_sanity_collapse_peaks(
     signal_smooth,
@@ -110,9 +107,7 @@ def spacing_sanity_collapse_peaks(
         if severity == 0:
             break
 
-        close_pair_indices = np.where(
-            spacings < min_spacing_ratio_trigger * median_spacing
-        )[0]
+        close_pair_indices = np.where(spacings < min_spacing_ratio_trigger * median_spacing)[0]
 
         if len(close_pair_indices) == 0:
             break
@@ -265,7 +260,9 @@ def width_cleanup_peaks(signal_smooth, peaks, max_remove=4):
     }
 
 
-def radial_beam_layer_count(raw, bio7, channel, n_beams=72, smooth_sigma=2, peak_distance=8, peak_prominence=200):
+def radial_beam_layer_count(
+    raw, bio7, channel, n_beams=72, smooth_sigma=2, peak_distance=8, peak_prominence=200
+):
     """
     Estimate cortex layer number by sampling radial beams through cortex.
     Counts intensity peaks along each beam inside cortex excluding aerenchyma.
@@ -353,6 +350,7 @@ def radial_beam_layer_count(raw, bio7, channel, n_beams=72, smooth_sigma=2, peak
         "beam_points": beam_points,
         "peak_points": peak_points,
     }
+
 
 def ring_peak_count(
     raw,
@@ -532,7 +530,7 @@ def ring_peak_count(
     # is more accurate and automatically adapts to ring density (24 cells for
     # Rice endo vs 80+ for Sorghum exo).
     if _auto_scaled:
-        _coarse_pd   = max(3, int(0.005 * len(signal_smooth)))   # ~7 idx for n_points=1440
+        _coarse_pd = max(3, int(0.005 * len(signal_smooth)))  # ~7 idx for n_points=1440
         _coarse_prom = max(0.02, 0.4 * effective_prominence)
         _coarse_peaks, _ = find_peaks(
             signal_smooth,
@@ -541,22 +539,22 @@ def ring_peak_count(
             width=1,
         )
         if len(_coarse_peaks) >= 6:
-            _coarse_sps = np.diff(
-                np.r_[_coarse_peaks, _coarse_peaks[0] + len(signal_smooth)]
-            )
+            _coarse_sps = np.diff(np.r_[_coarse_peaks, _coarse_peaks[0] + len(signal_smooth)])
             _med_sp = float(np.median(_coarse_sps))
             _good_sps = _coarse_sps[
-                (_coarse_sps >= 0.35 * _med_sp) &
-                (_coarse_sps <= 2.5  * _med_sp)
+                (_coarse_sps >= 0.35 * _med_sp) & (_coarse_sps <= 2.5 * _med_sp)
             ]
             if len(_good_sps) >= 4:
                 _est_sp = float(np.median(_good_sps))
-                peak_distance  = max(3, min(
-                    round(0.40 * _est_sp),
-                    int(0.04 * len(signal_smooth)),
-                ))
+                peak_distance = max(
+                    3,
+                    min(
+                        round(0.40 * _est_sp),
+                        int(0.04 * len(signal_smooth)),
+                    ),
+                )
                 merge_distance = max(4, round(0.70 * peak_distance))
-                peak_width     = max(1, round(0.30 * peak_distance))
+                peak_width = max(1, round(0.30 * peak_distance))
 
     # Explicit ACF override when caller passes a fixed peak_distance but still
     # wants signal-adaptive refinement. Skipped when _auto_scaled already ran.
@@ -564,16 +562,16 @@ def ring_peak_count(
         n = len(signal_smooth)
         s = signal_smooth - signal_smooth.mean()
         power = np.abs(np.fft.rfft(s, n=n)) ** 2
-        acf = np.fft.irfft(power, n=n)[:n // 2]
+        acf = np.fft.irfft(power, n=n)[: n // 2]
         if acf[0] > 0:
             acf /= acf[0]
         min_lag = max(4, int(0.01 * n))
         acf_peaks, _ = find_peaks(acf[min_lag:], prominence=0.05)
         if len(acf_peaks) > 0:
             dominant_period = int(acf_peaks[0]) + min_lag
-            peak_distance  = max(3, min(round(0.50 * dominant_period), int(0.04 * n)))
+            peak_distance = max(3, min(round(0.50 * dominant_period), int(0.04 * n)))
             merge_distance = max(4, round(0.60 * dominant_period))
-            peak_width     = max(1, round(0.20 * dominant_period))
+            peak_width = max(1, round(0.20 * dominant_period))
 
     # BUG 9 FIX: Auto-avoid circular seam is now gated by _apply_auto_seam.
     # When called from multi_ring_peak_count, the caller computes the offset once
@@ -610,11 +608,13 @@ def ring_peak_count(
     # -------------------------
     pad = max(peak_distance * 3, 30)
 
-    signal_for_peaks = np.concatenate([
-        signal_smooth[-pad:],
-        signal_smooth,
-        signal_smooth[:pad],
-    ])
+    signal_for_peaks = np.concatenate(
+        [
+            signal_smooth[-pad:],
+            signal_smooth,
+            signal_smooth[:pad],
+        ]
+    )
 
     raw_peaks_pad, _ = find_peaks(
         signal_for_peaks,
@@ -779,8 +779,8 @@ def ring_peak_count(
         keep_peaks = []
 
         for p in peaks:
-            left = signal_smooth[max(0, p - local_window):p]
-            right = signal_smooth[p:min(len(signal_smooth), p + local_window)]
+            left = signal_smooth[max(0, p - local_window) : p]
+            right = signal_smooth[p : min(len(signal_smooth), p + local_window)]
 
             left_min = np.min(left) if len(left) else signal_smooth[p]
             right_min = np.min(right) if len(right) else signal_smooth[p]
@@ -914,7 +914,9 @@ def ring_peak_count(
 
             # Require real local contrast, but slightly relaxed because this is a rescue.
             local_window = max(3, int(0.5 * peak_distance))
-            idx = np.arange(candidate - local_window, candidate + local_window + 1) % len(signal_smooth)
+            idx = np.arange(candidate - local_window, candidate + local_window + 1) % len(
+                signal_smooth
+            )
             local_region = signal_smooth[idx]
 
             candidate_contrast = signal_smooth[candidate] - np.min(local_region)
@@ -930,8 +932,8 @@ def ring_peak_count(
             candidate_width = candidate_widths[0]
 
             width_ok = (
-                candidate_width >= 0.35 * median_ref_width and
-                candidate_width <= 3.0 * median_ref_width
+                candidate_width >= 0.35 * median_ref_width
+                and candidate_width <= 3.0 * median_ref_width
             )
 
             if (
@@ -981,19 +983,14 @@ def ring_peak_count(
     # QC metrics
     # -------------------------
     if len(peaks) >= 3:
-         # QC: detect broad peaks (merged cell walls)
+        # QC: detect broad peaks (merged cell walls)
         widths, _, _, _ = peak_widths(signal_smooth, peaks, rel_height=0.5)
 
         median_width = float(np.median(widths)) if len(widths) else 0
 
-        wide_peak_fraction = (
-            float(np.mean(widths > 1.8 * median_width))
-            if median_width > 0 else 0
-        )
+        wide_peak_fraction = float(np.mean(widths > 1.8 * median_width)) if median_width > 0 else 0
 
-        has_unresolved_wide_peak = bool(
-            median_width > 0 and np.any(widths > 2.2 * median_width)
-        )
+        has_unresolved_wide_peak = bool(median_width > 0 and np.any(widths > 2.2 * median_width))
 
         spacings = np.diff(np.r_[peaks, peaks[0] + len(signal_smooth)])
         mean_spacing = float(np.mean(spacings))
@@ -1003,9 +1000,7 @@ def ring_peak_count(
         median_peak_signal = float(np.median(peak_values))
         min_peak_signal = float(np.min(peak_values))
 
-        weak_peak_fraction = float(np.mean(
-            peak_values < 0.5 * median_peak_signal
-        ))
+        weak_peak_fraction = float(np.mean(peak_values < 0.5 * median_peak_signal))
 
         min_spacing = float(np.min(spacings))
         max_spacing = float(np.max(spacings))
@@ -1041,9 +1036,8 @@ def ring_peak_count(
         review_needed = len(qc_reasons) > 0
         qc_reason = ";".join(qc_reasons)
 
-        likely_missed_cell = (
-            (max_to_median_spacing > 1.45 and spacing_cv > 0.20)
-            or has_unresolved_wide_peak
+        likely_missed_cell = (  # noqa: F841 - computed for upcoming QC logic, not yet used
+            (max_to_median_spacing > 1.45 and spacing_cv > 0.20) or has_unresolved_wide_peak
         )
 
         if review_needed:
@@ -1094,8 +1088,10 @@ def ring_peak_count(
         for p in local_peaks_end:
             print(
                 p,
-                "signal=", round(float(signal_smooth[p]), 1),
-                "kept=", int(p) in set(peaks),
+                "signal=",
+                round(float(signal_smooth[p]), 1),
+                "kept=",
+                int(p) in set(peaks),
             )
 
     return {
@@ -1111,7 +1107,8 @@ def ring_peak_count(
         "adaptive_peak_cleanup_removed": int(width_cleanup_info["removed"]),
         "adaptive_peak_cleanup_reason": width_cleanup_info["reason"],
         "count_status": "spacing_sanity_corrected" if spacing_sanity_info["applied"] else "",
-        "correction_applied": -int(spacing_sanity_info["removed"]) - int(width_cleanup_info["removed"]),
+        "correction_applied": -int(spacing_sanity_info["removed"])
+        - int(width_cleanup_info["removed"]),
         "channel": channel,
         "base_prominence": float(peak_prominence),
         "adaptive_prominence": float(peak_prominence),
@@ -1200,8 +1197,7 @@ def rescue_peaks_from_valleys(
 
         # exclude boundary peaks very close to already accepted peaks
         internal_peaks = internal_peaks[
-            (internal_peaks > min_distance) &
-            (internal_peaks < len(seg) - min_distance)
+            (internal_peaks > min_distance) & (internal_peaks < len(seg) - min_distance)
         ]
 
         if len(internal_peaks) == 0:
@@ -1262,7 +1258,7 @@ def multi_ring_peak_count(
     consensus_nms_radius=0,
     consensus_nms_fraction=0.0,
     consensus_nms_max_radius=None,
-    ):
+):
 
     if preset_params is None:
         preset_params = COUNT_PRESETS["Balanced"]
@@ -1279,9 +1275,9 @@ def multi_ring_peak_count(
         ring_width = scaled_ring_defaults(scale)["ring_width"]
     # Force adaptive estimation inside ring_peak_count regardless of what the
     # caller passed for these three params.
-    peak_distance  = None
+    peak_distance = None
     merge_distance = None
-    peak_width     = None
+    peak_width = None
 
     positions = np.linspace(
         ring_position_min,
@@ -1300,11 +1296,11 @@ def multi_ring_peak_count(
         ring_width=ring_width,
         n_points=n_points,
         smooth_sigma=smooth_sigma,
-        peak_distance=peak_distance,       # None → adaptive inside
+        peak_distance=peak_distance,  # None → adaptive inside
         peak_prominence=peak_prominence,
         local_contrast_threshold=local_contrast_threshold,
-        peak_width=peak_width,             # None → adaptive inside
-        merge_distance=merge_distance,     # None → adaptive inside
+        peak_width=peak_width,  # None → adaptive inside
+        merge_distance=merge_distance,  # None → adaptive inside
         enable_gap_fill=False,
         enable_dense_check=False,
         enable_wide_peak_split=False,
@@ -1331,11 +1327,11 @@ def multi_ring_peak_count(
             ring_width=ring_width,
             n_points=n_points,
             smooth_sigma=smooth_sigma,
-            peak_distance=peak_distance,       # None → adaptive inside
+            peak_distance=peak_distance,  # None → adaptive inside
             peak_prominence=peak_prominence,
             local_contrast_threshold=local_contrast_threshold,
-            peak_width=peak_width,             # None → adaptive inside
-            merge_distance=merge_distance,     # None → adaptive inside
+            peak_width=peak_width,  # None → adaptive inside
+            merge_distance=merge_distance,  # None → adaptive inside
             enable_gap_fill=enable_gap_fill,
             enable_dense_check=enable_dense_check,
             enable_wide_peak_split=enable_wide_peak_split,
@@ -1355,12 +1351,14 @@ def multi_ring_peak_count(
     peak_entries = []
     for ring_id, stats in enumerate(all_stats):
         for p in stats["peaks"]:
-            peak_entries.append({
-                "ring_id": ring_id,
-                "peak_index": int(p),
-                "value": float(stats["signal_smooth"][p]),
-                "point": stats["ring_points"][p],
-            })
+            peak_entries.append(
+                {
+                    "ring_id": ring_id,
+                    "peak_index": int(p),
+                    "value": float(stats["signal_smooth"][p]),
+                    "point": stats["ring_points"][p],
+                }
+            )
 
     if len(peak_entries) == 0:
         base = all_stats[len(all_stats) // 2]
@@ -1373,8 +1371,7 @@ def multi_ring_peak_count(
         base["review_needed"] = True
         return base
 
-    all_indices = sorted(set(e["peak_index"] for e in peak_entries))
-    _default_cw = int(0.015 * n_points)   # ~22 idx for n_points=1440
+    _default_cw = int(0.015 * n_points)  # ~22 idx for n_points=1440
 
     # Consensus window strategy is tissue-dependent:
     #
@@ -1510,12 +1507,14 @@ def multi_ring_peak_count(
     _nms_r = 0
     if len(consensus_peaks) >= 2:
         if consensus_nms_fraction > 0.0:
-            _spacings_nms = np.diff(np.r_[
-                np.sort(consensus_peaks),
-                np.sort(consensus_peaks)[0] + n_points,
-            ])
+            _spacings_nms = np.diff(
+                np.r_[
+                    np.sort(consensus_peaks),
+                    np.sort(consensus_peaks)[0] + n_points,
+                ]
+            )
             _med_sp = float(np.median(_spacings_nms))
-            _nms_r  = max(1, round(consensus_nms_fraction * _med_sp))
+            _nms_r = max(1, round(consensus_nms_fraction * _med_sp))
             if consensus_nms_max_radius is not None:
                 _nms_r = min(_nms_r, int(consensus_nms_max_radius))
         elif consensus_nms_radius > 0:
@@ -1526,9 +1525,11 @@ def multi_ring_peak_count(
     if _nms_r > 0 and len(consensus_peaks) >= 2:
         _sig = base["signal_smooth"]
         # Greedy NMS: iterate from strongest support → weakest, suppress neighbours
-        _order = sorted(range(len(consensus_peaks)),
-                        key=lambda i: (support_counts[i], _sig[consensus_peaks[i]]),
-                        reverse=True)
+        _order = sorted(
+            range(len(consensus_peaks)),
+            key=lambda i: (support_counts[i], _sig[consensus_peaks[i]]),
+            reverse=True,
+        )
         _keep = np.ones(len(consensus_peaks), dtype=bool)
         for _i in _order:
             if not _keep[_i]:
@@ -1544,9 +1545,9 @@ def multi_ring_peak_count(
 
         _ki = [i for i in range(len(consensus_peaks)) if _keep[i]]
         base["consensus_nms_removed"] = int(len(consensus_peaks)) - len(_ki)
-        consensus_peaks  = consensus_peaks[_ki]
+        consensus_peaks = consensus_peaks[_ki]
         consensus_points = [consensus_points[i] for i in _ki]
-        support_counts   = [support_counts[i]   for i in _ki]
+        support_counts = [support_counts[i] for i in _ki]
     else:
         base["consensus_nms_removed"] = 0
 
@@ -1568,10 +1569,7 @@ def multi_ring_peak_count(
             weak_peak = signal_smooth[p] < 0.17 * median_peak_value
             not_gap_rescue = left_gap < 1.35 * median_spacing and right_gap < 1.35 * median_spacing
 
-            is_gap_boundary = (
-                left_gap > 1.2 * median_spacing or
-                right_gap > 1.2 * median_spacing
-            )
+            is_gap_boundary = left_gap > 1.2 * median_spacing or right_gap > 1.2 * median_spacing
 
             if weak_peak and not_gap_rescue and not is_gap_boundary:
                 continue
@@ -1593,20 +1591,14 @@ def multi_ring_peak_count(
         signal_smooth = base["signal_smooth"]
         peak_values = signal_smooth[consensus_peaks]
 
-        pre_rescue_spacing_cv = float(
-            np.std(spacings) / (np.mean(spacings) + 1e-6)
-        )
-        pre_rescue_min_to_median = float(
-            np.min(spacings) / (median_spacing + 1e-6)
-        )
-        pre_rescue_peak_cv = float(
-            np.std(peak_values) / (np.mean(peak_values) + 1e-6)
-        )
+        pre_rescue_spacing_cv = float(np.std(spacings) / (np.mean(spacings) + 1e-6))
+        pre_rescue_min_to_median = float(np.min(spacings) / (median_spacing + 1e-6))
+        pre_rescue_peak_cv = float(np.std(peak_values) / (np.mean(peak_values) + 1e-6))
 
         rescue_allowed = not (
-            pre_rescue_spacing_cv > 0.20 or
-            pre_rescue_min_to_median < 0.50 or
-            pre_rescue_peak_cv > 0.45
+            pre_rescue_spacing_cv > 0.20
+            or pre_rescue_min_to_median < 0.50
+            or pre_rescue_peak_cv > 0.45
         )
 
         rescue_peak_entries = []
@@ -1665,8 +1657,7 @@ def multi_ring_peak_count(
                     candidate_clusters.append(cluster)
 
                 good_clusters = [
-                    c for c in candidate_clusters
-                    if len(set(e["ring_id"] for e in c)) >= 2
+                    c for c in candidate_clusters if len(set(e["ring_id"] for e in c)) >= 2
                 ]
 
                 if len(good_clusters) == 0:
@@ -1709,31 +1700,30 @@ def multi_ring_peak_count(
                         right = (p2 - candidate) % n_points
 
                         spacing_ok = (
-                            left > 0.4 * median_spacing and
-                            right > 0.4 * median_spacing and
-                            left < 1.8 * median_spacing and
-                            right < 1.8 * median_spacing
+                            left > 0.4 * median_spacing
+                            and right > 0.4 * median_spacing
+                            and left < 1.8 * median_spacing
+                            and right < 1.8 * median_spacing
                         )
 
                         creates_extreme = (
-                            min(left, right) < 0.35 * median_spacing or
-                            max(left, right) > 2.2 * median_spacing
+                            min(left, right) < 0.35 * median_spacing
+                            or max(left, right) > 2.2 * median_spacing
                         )
 
                         if spacing_ok and not creates_extreme:
-                            rescue_peak_entries.append({
-                                "ring_id": len(all_stats) // 2,
-                                "peak_index": candidate,
-                                "value": float(signal_smooth[candidate]),
-                                "point": base["ring_points"][candidate],
-                            })
+                            rescue_peak_entries.append(
+                                {
+                                    "ring_id": len(all_stats) // 2,
+                                    "peak_index": candidate,
+                                    "value": float(signal_smooth[candidate]),
+                                    "point": base["ring_points"][candidate],
+                                }
+                            )
 
                     continue
 
-                best_cluster = max(
-                    good_clusters,
-                    key=lambda c: np.max([e["value"] for e in c])
-                )
+                best_cluster = max(good_clusters, key=lambda c: np.max([e["value"] for e in c]))
 
                 rep = max(best_cluster, key=lambda e: e["value"])
                 candidate = int(rep["peak_index"])
@@ -1742,23 +1732,23 @@ def multi_ring_peak_count(
                 right_split = (p2 - candidate) % n_points
 
                 balanced_split = (
-                    left_split >= 0.35 * median_spacing and
-                    right_split >= 0.35 * median_spacing and
-                    left_split <= 2.20 * median_spacing and
-                    right_split <= 2.20 * median_spacing
+                    left_split >= 0.35 * median_spacing
+                    and right_split >= 0.35 * median_spacing
+                    and left_split <= 2.20 * median_spacing
+                    and right_split <= 2.20 * median_spacing
                 )
 
-                candidate_value_ok = rep["value"] >= 0.35 * np.median([
-                    e["value"] for e in peak_entries
-                ])
+                candidate_value_ok = rep["value"] >= 0.35 * np.median(
+                    [e["value"] for e in peak_entries]
+                )
 
                 if is_large_gap and balanced_split and candidate_value_ok:
                     rescue_peak_entries.append(rep)
 
                 elif is_medium_gap:
-                    stronger_signal = rep["value"] >= 0.5 * np.median([
-                        e["value"] for e in peak_entries
-                    ])
+                    stronger_signal = rep["value"] >= 0.5 * np.median(
+                        [e["value"] for e in peak_entries]
+                    )
 
                     if balanced_split and stronger_signal:
                         rescue_peak_entries.append(rep)
@@ -1769,11 +1759,13 @@ def multi_ring_peak_count(
                 consensus_peaks = np.append(consensus_peaks, p)
                 consensus_points.append(rep["point"])
                 support_counts.append(
-                    len(set(
-                        e["ring_id"]
-                        for e in peak_entries
-                        if abs(int(e["peak_index"]) - p) <= consensus_window
-                    ))
+                    len(
+                        set(
+                            e["ring_id"]
+                            for e in peak_entries
+                            if abs(int(e["peak_index"]) - p) <= consensus_window
+                        )
+                    )
                 )
 
         order = np.argsort(consensus_peaks)
@@ -1828,9 +1820,8 @@ def multi_ring_peak_count(
                 # Do NOT collapse normal small adjacent cells.
                 index_close = gap < 0.35 * median_spacing
 
-                spatial_close = (
-                    xy_dist <= 6.0
-                    or (median_xy_dist > 0 and xy_dist < 0.25 * median_xy_dist)
+                spatial_close = xy_dist <= 6.0 or (
+                    median_xy_dist > 0 and xy_dist < 0.25 * median_xy_dist
                 )
 
                 if not (index_close and spatial_close):
@@ -1870,9 +1861,7 @@ def multi_ring_peak_count(
 
         consensus_peaks = np.array(sorted(consensus_peaks), dtype=int)
 
-        spacings = np.diff(
-            np.r_[consensus_peaks, consensus_peaks[0] + n_signal]
-        )
+        spacings = np.diff(np.r_[consensus_peaks, consensus_peaks[0] + n_signal])
 
         median_spacing = float(np.median(spacings))
 
@@ -1902,7 +1891,6 @@ def multi_ring_peak_count(
 
         if not skip_geometry_fill:
             for i, gap in enumerate(spacings):
-
                 pt1 = pts[i]
                 pt2 = pts[(i + 1) % len(pts)]
                 spatial_gap = np.linalg.norm(pt1 - pt2)
@@ -1923,9 +1911,9 @@ def multi_ring_peak_count(
                 current_spacing_cv = float(np.std(spacings) / (np.mean(spacings) + 1e-6))
 
                 allow_multi_rescue = (
-                    gap > 2.2 * median_spacing and
-                    current_min_gap_ratio > 0.55 and
-                    current_spacing_cv < 0.25
+                    gap > 2.2 * median_spacing
+                    and current_min_gap_ratio > 0.55
+                    and current_spacing_cv < 0.25
                 )
 
                 if n_missing > 1 and not allow_multi_rescue:
@@ -1936,19 +1924,16 @@ def multi_ring_peak_count(
 
                     search_radius = int(0.20 * median_spacing)
 
-                    search_idx = np.arange(
-                        expected - search_radius,
-                        expected + search_radius + 1
-                    ) % n_signal
+                    search_idx = (
+                        np.arange(expected - search_radius, expected + search_radius + 1) % n_signal
+                    )
 
                     candidate = int(search_idx[np.argmax(signal_smooth[search_idx])])
 
                     left = (candidate - p1) % n_signal
                     right = (p2 - candidate) % n_signal
 
-                    candidate_strength_ok = (
-                        signal_smooth[candidate] >= 0.55 * median_peak_signal
-                    )
+                    candidate_strength_ok = signal_smooth[candidate] >= 0.55 * median_peak_signal
 
                     too_close_existing = any(
                         min(abs(candidate - q), n_signal - abs(candidate - q))
@@ -1957,8 +1942,7 @@ def multi_ring_peak_count(
                     )
 
                     local_spacing_ok = (
-                        left >= 0.30 * median_spacing and
-                        right >= 0.30 * median_spacing
+                        left >= 0.30 * median_spacing and right >= 0.30 * median_spacing
                     )
 
                     if candidate_strength_ok and local_spacing_ok and not too_close_existing:
@@ -1970,21 +1954,22 @@ def multi_ring_peak_count(
                 dtype=int,
             )
 
-            consensus_points = [
-                base["ring_points"][int(p)] for p in consensus_peaks
-            ]
+            consensus_points = [base["ring_points"][int(p)] for p in consensus_peaks]
 
             support_counts = [
                 max(
                     1,
-                    len(set(
-                        e["ring_id"]
-                        for e in peak_entries
-                        if min(
-                            abs(int(e["peak_index"]) - int(p)),
-                            n_signal - abs(int(e["peak_index"]) - int(p))
-                        ) <= consensus_window
-                    ))
+                    len(
+                        set(
+                            e["ring_id"]
+                            for e in peak_entries
+                            if min(
+                                abs(int(e["peak_index"]) - int(p)),
+                                n_signal - abs(int(e["peak_index"]) - int(p)),
+                            )
+                            <= consensus_window
+                        )
+                    ),
                 )
                 for p in consensus_peaks
             ]
@@ -1997,22 +1982,13 @@ def multi_ring_peak_count(
         n_signal = len(signal_smooth)
 
         consensus_peaks = np.array(sorted(consensus_peaks), dtype=int)
-        spacings = np.diff(
-            np.r_[consensus_peaks, consensus_peaks[0] + n_signal]
-        )
+        spacings = np.diff(np.r_[consensus_peaks, consensus_peaks[0] + n_signal])
 
         median_spacing_tmp = float(np.median(spacings))
-        spacing_cv_tmp = float(
-            np.std(spacings) / (np.mean(spacings) + 1e-6)
-        )
-        max_to_median_tmp = float(
-            np.max(spacings) / (median_spacing_tmp + 1e-6)
-        )
+        spacing_cv_tmp = float(np.std(spacings) / (np.mean(spacings) + 1e-6))
+        max_to_median_tmp = float(np.max(spacings) / (median_spacing_tmp + 1e-6))
 
-        severe_undercount_signature = (
-            spacing_cv_tmp > 0.32 and
-            max_to_median_tmp > 2.2
-        )
+        severe_undercount_signature = spacing_cv_tmp > 0.32 and max_to_median_tmp > 2.2
 
         if severe_undercount_signature:
             thr = np.percentile(signal_smooth, 65)
@@ -2042,9 +2018,7 @@ def multi_ring_peak_count(
                 and len(region_peaks) <= len(consensus_peaks) + 8
             ):
                 consensus_peaks = region_peaks
-                consensus_points = [
-                    base["ring_points"][int(p)] for p in consensus_peaks
-                ]
+                consensus_points = [base["ring_points"][int(p)] for p in consensus_peaks]
                 support_counts = [1 for _ in consensus_peaks]
 
                 base["used_plateau_fallback"] = True
@@ -2058,9 +2032,7 @@ def multi_ring_peak_count(
             n_signal = len(signal_smooth)
 
             consensus_peaks = np.array(sorted(consensus_peaks), dtype=int)
-            spacings = np.diff(
-                np.r_[consensus_peaks, consensus_peaks[0] + n_signal]
-            )
+            spacings = np.diff(np.r_[consensus_peaks, consensus_peaks[0] + n_signal])
 
             median_spacing = float(np.median(spacings))
             spacing_cv = float(np.std(spacings) / (np.mean(spacings) + 1e-6))
@@ -2073,17 +2045,13 @@ def multi_ring_peak_count(
             spacing_rescue_added = []
 
             # Only allow spacing rescue on clearly broken rings
-            allow_spacing_rescue = (
-                spacing_cv > 0.30 or
-                max_to_median > 2.2
-            )
+            allow_spacing_rescue = spacing_cv > 0.30 or max_to_median > 2.2
 
             if not allow_spacing_rescue:
                 base["spacing_rescue_applied"] = False
                 base["spacing_rescue_added"] = 0
                 base["spacing_rescue_added_peaks"] = []
             else:
-
                 for i, gap in enumerate(spacings):
                     if median_spacing <= 0:
                         continue
@@ -2103,10 +2071,10 @@ def multi_ring_peak_count(
 
                         # Refine to strongest nearby signal, but do not let signal dominate.
                         search_radius = max(2, int(0.25 * median_spacing))
-                        search_idx = np.arange(
-                            expected - search_radius,
-                            expected + search_radius + 1
-                        ) % n_signal
+                        search_idx = (
+                            np.arange(expected - search_radius, expected + search_radius + 1)
+                            % n_signal
+                        )
 
                         candidate = int(search_idx[np.argmax(signal_smooth[search_idx])])
 
@@ -2126,13 +2094,12 @@ def multi_ring_peak_count(
                     )
 
                     expected_cells = (
-                        int(round(n_signal / median_spacing)) if median_spacing > 0 else len(candidate_peaks)
+                        int(round(n_signal / median_spacing))
+                        if median_spacing > 0
+                        else len(candidate_peaks)
                     )
 
-                    severe_ring = (
-                        spacing_cv > 0.40 or
-                        max_to_median > 3.0
-                    )
+                    severe_ring = spacing_cv > 0.40 or max_to_median > 3.0
 
                     # If rescue inflates a non-severe ring beyond spacing expectation,
                     # reject the rescue. This prevents hallucinated extra cells.
@@ -2145,22 +2112,22 @@ def multi_ring_peak_count(
                     else:
                         consensus_peaks = candidate_peaks
 
-                        consensus_points = [
-                            base["ring_points"][int(p)]
-                            for p in consensus_peaks
-                        ]
+                        consensus_points = [base["ring_points"][int(p)] for p in consensus_peaks]
 
                         support_counts = [
                             max(
                                 1,
-                                len(set(
-                                    e["ring_id"]
-                                    for e in peak_entries
-                                    if min(
-                                        abs(int(e["peak_index"]) - int(p)),
-                                        n_signal - abs(int(e["peak_index"]) - int(p))
-                                    ) <= consensus_window
-                                ))
+                                len(
+                                    set(
+                                        e["ring_id"]
+                                        for e in peak_entries
+                                        if min(
+                                            abs(int(e["peak_index"]) - int(p)),
+                                            n_signal - abs(int(e["peak_index"]) - int(p)),
+                                        )
+                                        <= consensus_window
+                                    )
+                                ),
                             )
                             for p in consensus_peaks
                         ]
@@ -2173,7 +2140,6 @@ def multi_ring_peak_count(
                     base["spacing_rescue_applied"] = False
                     base["spacing_rescue_added"] = 0
                     base["spacing_rescue_added_peaks"] = []
-        
 
         # -------------------------
         # Exodermis-only radial sanity filter
@@ -2201,10 +2167,7 @@ def multi_ring_peak_count(
             lower_radius = 0.75 * median_radius
             upper_radius = 1.25 * median_radius
 
-            keep = (
-                (radii >= lower_radius) &
-                (radii <= upper_radius)
-            )
+            keep = (radii >= lower_radius) & (radii <= upper_radius)
 
             if np.sum(~keep) > 0:
                 base["radial_sanity_applied"] = True
@@ -2238,10 +2201,7 @@ def multi_ring_peak_count(
 
     consensus_peaks = np.array(sorted(peaks), dtype=int)
 
-    consensus_points = [
-        base["ring_points"][int(p)]
-        for p in consensus_peaks
-    ]
+    consensus_points = [base["ring_points"][int(p)] for p in consensus_peaks]
 
     # -------------------------
     # Final radial sanity filter
@@ -2271,17 +2231,12 @@ def multi_ring_peak_count(
             lower_radius = 0.70 * median_radius
             upper_radius = 1.30 * median_radius
 
-            keep = (
-                (radii >= lower_radius) &
-                (radii <= upper_radius)
-            )
+            keep = (radii >= lower_radius) & (radii <= upper_radius)
 
             if np.sum(~keep) > 0:
                 base["radial_sanity_applied"] = True
                 base["radial_sanity_removed"] = int(np.sum(~keep))
-                base["radial_sanity_removed_peaks"] = [
-                    int(p) for p in consensus_peaks[~keep]
-                ]
+                base["radial_sanity_removed_peaks"] = [int(p) for p in consensus_peaks[~keep]]
 
                 consensus_peaks = consensus_peaks[keep]
                 consensus_points = [pt for pt, k in zip(consensus_points, keep) if k]
@@ -2298,7 +2253,7 @@ def multi_ring_peak_count(
     # and therefore has weak DAPI support → those peaks are rejected.
     # Only active when dapi_validation=True and the primary channel is not DAPI.
     if dapi_validation and channel != "DAPI" and len(consensus_peaks) > 0:
-        _dapi_img = raw[..., 2].astype(float)    # DAPI is always index 2
+        _dapi_img = raw[..., 2].astype(float)  # DAPI is always index 2
 
         # DAPI intensity at each consensus peak's spatial position
         _dapi_at_peaks = np.array(
@@ -2314,21 +2269,21 @@ def multi_ring_peak_count(
         )
         _dapi_baseline = float(np.percentile(_dapi_ring, 20))
 
-        _dapi_adj  = np.maximum(_dapi_at_peaks - _dapi_baseline, 0.0)
+        _dapi_adj = np.maximum(_dapi_at_peaks - _dapi_baseline, 0.0)
         _dapi_median = float(np.median(_dapi_adj))
 
         if _dapi_median > 0:
             _valid = _dapi_adj >= dapi_threshold_fraction * _dapi_median
-            consensus_peaks  = consensus_peaks[_valid]
+            consensus_peaks = consensus_peaks[_valid]
             consensus_points = [p for p, v in zip(consensus_points, _valid) if v]
-            support_counts   = [s for s, v in zip(support_counts,   _valid) if v]
-            base["dapi_validation_applied"]  = True
+            support_counts = [s for s, v in zip(support_counts, _valid) if v]
+            base["dapi_validation_applied"] = True
             base["dapi_validation_rejected"] = int(np.sum(~_valid))
         else:
-            base["dapi_validation_applied"]  = False
+            base["dapi_validation_applied"] = False
             base["dapi_validation_rejected"] = 0
     else:
-        base["dapi_validation_applied"]  = False
+        base["dapi_validation_applied"] = False
         base["dapi_validation_rejected"] = 0
 
     final_count = int(len(consensus_peaks))
@@ -2342,9 +2297,7 @@ def multi_ring_peak_count(
         signal_smooth = base["signal_smooth"]
         signal_len = len(signal_smooth)
 
-        spacings = np.diff(
-            np.r_[consensus_peaks, consensus_peaks[0] + signal_len]
-        )
+        spacings = np.diff(np.r_[consensus_peaks, consensus_peaks[0] + signal_len])
 
         median_spacing = float(np.median(spacings))
         spacing_cv_corr = float(np.std(spacings) / (np.mean(spacings) + 1e-6))
@@ -2361,10 +2314,7 @@ def multi_ring_peak_count(
         cx = float(np.mean(xs))
 
         all_ring_pts = np.array(base["ring_points"], dtype=float)
-        ring_radii = np.sqrt(
-            (all_ring_pts[:, 0] - cy) ** 2 +
-            (all_ring_pts[:, 1] - cx) ** 2
-        )
+        ring_radii = np.sqrt((all_ring_pts[:, 0] - cy) ** 2 + (all_ring_pts[:, 1] - cx) ** 2)
 
         valid_radius_ref = ring_radii[ring_radii > np.percentile(ring_radii, 20)]
 
@@ -2373,10 +2323,7 @@ def multi_ring_peak_count(
         else:
             median_radius = float(np.median(ring_radii))
 
-        radius_valid = (
-            (ring_radii >= 0.70 * median_radius) &
-            (ring_radii <= 1.30 * median_radius)
-        )
+        radius_valid = (ring_radii >= 0.70 * median_radius) & (ring_radii <= 1.30 * median_radius)
 
         signal_valid = signal_smooth >= np.percentile(signal_smooth, 20)
 
@@ -2448,21 +2395,15 @@ def multi_ring_peak_count(
     )
     base["correction_applied"] = -int(spacing_sanity_info["removed"])
 
-    base["likely_missed_cell"] = any(
-        s.get("likely_missed_cell", False) for s in all_stats
-    )
+    base["likely_missed_cell"] = any(s.get("likely_missed_cell", False) for s in all_stats)
 
     base["has_unresolved_wide_peak"] = any(
         s.get("has_unresolved_wide_peak", False) for s in all_stats
     )
 
-    base["wide_peak_fraction"] = max(
-        [s.get("wide_peak_fraction", 0) for s in all_stats] or [0]
-    )
+    base["wide_peak_fraction"] = max([s.get("wide_peak_fraction", 0) for s in all_stats] or [0])
 
-    base["median_peak_width"] = np.median([
-        s.get("median_peak_width", 0) for s in all_stats
-    ])
+    base["median_peak_width"] = np.median([s.get("median_peak_width", 0) for s in all_stats])
 
     # redo basic QC on consensus peaks
     if len(consensus_peaks) >= 3:
@@ -2545,14 +2486,8 @@ def multi_ring_peak_count(
     base["needs_manual_review"] = base["review_needed"]
 
     base["qc_clean"] = not base["review_needed"]
-    base["likely_undercount"] = (
-        max_gap > 1.8 or
-        (spacing_cv > 0.35 and max_gap > 1.5)
-    )
-    base["likely_overcount"] = (
-        weak_frac > 0.25 and
-        min_gap < 0.55
-    )
+    base["likely_undercount"] = max_gap > 1.8 or (spacing_cv > 0.35 and max_gap > 1.5)
+    base["likely_overcount"] = weak_frac > 0.25 and min_gap < 0.55
 
     if base["qc_clean"]:
         base["count_status"] = "clean"
@@ -2601,6 +2536,8 @@ def suggest_ring_range(
     enable_close_doublet_collapse=True,
     auto_peak_distance=False,
     enable_adaptive_peak_cleanup=False,
+    enable_spacing_rescue=False,
+    enable_valley_rescue=False,
 ):
     rows = []
 
@@ -2646,20 +2583,22 @@ def suggest_ring_range(
             + 1.0 * peak_cv
         )
 
-        rows.append({
-            "ring_range_label": label,
-            "ring_position_min": rmin,
-            "ring_position_max": rmax,
-            "score": score,
-            "count": stats.get("count", np.nan),
-            "spacing_cv": spacing_cv,
-            "min_to_median_spacing": min_ratio,
-            "max_to_median_spacing": max_ratio,
-            "weak_peak_fraction": weak_frac,
-            "peak_cv": peak_cv,
-            "review_needed": stats.get("review_needed", True),
-            "confidence": stats.get("confidence", "low"),
-        })
+        rows.append(
+            {
+                "ring_range_label": label,
+                "ring_position_min": rmin,
+                "ring_position_max": rmax,
+                "score": score,
+                "count": stats.get("count", np.nan),
+                "spacing_cv": spacing_cv,
+                "min_to_median_spacing": min_ratio,
+                "max_to_median_spacing": max_ratio,
+                "weak_peak_fraction": weak_frac,
+                "peak_cv": peak_cv,
+                "review_needed": stats.get("review_needed", True),
+                "confidence": stats.get("confidence", "low"),
+            }
+        )
 
     df = pd.DataFrame(rows).sort_values("score").reset_index(drop=True)
     return df
@@ -2731,24 +2670,15 @@ def dual_channel_ring_peak_count(
         use_secondary = True
         selection_reason = "primary_flagged_secondary_clean"
 
-    elif (
-        abs(channel_difference) <= 2
-        and secondary_score < 0.95 * primary_score
-    ):
+    elif abs(channel_difference) <= 2 and secondary_score < 0.95 * primary_score:
         use_secondary = True
         selection_reason = "secondary_better_qc_close_count"
 
-    elif (
-        abs(channel_difference) > 2
-        and secondary_score < 0.80 * primary_score
-    ):
+    elif abs(channel_difference) > 2 and secondary_score < 0.80 * primary_score:
         use_secondary = True
         selection_reason = "secondary_much_better_qc_large_diff"
 
-    elif (
-        abs(channel_difference) >= 3
-        and secondary_score < primary_score
-    ):
+    elif abs(channel_difference) >= 3 and secondary_score < primary_score:
         use_secondary = True
         selection_reason = "secondary_better_qc_large_diff"
 
@@ -2779,10 +2709,7 @@ def dual_channel_ring_peak_count(
     out["secondary_channel_qc_reason"] = stats_secondary.get("qc_reason", "")
 
     # If both channels disagree strongly, keep review flag even after selection.
-    out["review_needed"] = bool(
-        out.get("review_needed", False)
-        or abs(channel_difference) > 2
-    )
+    out["review_needed"] = bool(out.get("review_needed", False) or abs(channel_difference) > 2)
 
     if out["review_needed"]:
         out["confidence"] = "low"

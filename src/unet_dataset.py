@@ -5,7 +5,7 @@ UNetMultilabelDataset: 6-channel multilabel masks (all raw annotation classes at
 UNetBinaryDataset: Per-class binary masks (one raw annotation class at a time).
 """
 
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import albumentations as A
 import cv2
@@ -64,10 +64,10 @@ class UNetSemanticDataset(Dataset):
         sem_mask = polygons_to_raw_semantic_mask(anns, h, w)  # (H, W) int32
 
         # Resize
-        img = cv2.resize(img, (self.img_size, self.img_size),
-                         interpolation=cv2.INTER_LINEAR)
+        img = cv2.resize(img, (self.img_size, self.img_size), interpolation=cv2.INTER_LINEAR)
         sem_mask = cv2.resize(
-            sem_mask.astype(np.uint8), (self.img_size, self.img_size),
+            sem_mask.astype(np.uint8),
+            (self.img_size, self.img_size),
             interpolation=cv2.INTER_NEAREST,
         ).astype(np.int32)
 
@@ -130,13 +130,15 @@ class UNetMultilabelDataset(Dataset):
         mask_stack = np.stack([binary_masks[c] for c in range(6)])  # (6, H, W) uint8
 
         # Resize
-        img = cv2.resize(img, (self.img_size, self.img_size),
-                         interpolation=cv2.INTER_LINEAR)
-        resized_masks = np.stack([
-            cv2.resize(mask_stack[c], (self.img_size, self.img_size),
-                       interpolation=cv2.INTER_NEAREST)
-            for c in range(6)
-        ])  # (6, H, W) uint8
+        img = cv2.resize(img, (self.img_size, self.img_size), interpolation=cv2.INTER_LINEAR)
+        resized_masks = np.stack(
+            [
+                cv2.resize(
+                    mask_stack[c], (self.img_size, self.img_size), interpolation=cv2.INTER_NEAREST
+                )
+                for c in range(6)
+            ]
+        )  # (6, H, W) uint8
 
         # Augmentation — use first mask channel for albumentations,
         # then apply same spatial transform to all channels
@@ -152,8 +154,9 @@ class UNetMultilabelDataset(Dataset):
                 kwargs[f"mask{i}"] = resized_masks[i]
             transformed = aug(**kwargs)
             img = transformed["image"]
-            resized_masks = np.stack([transformed["mask"]] +
-                                     [transformed[f"mask{i}"] for i in range(1, 6)])
+            resized_masks = np.stack(
+                [transformed["mask"]] + [transformed[f"mask{i}"] for i in range(1, 6)]
+            )
 
         img_tensor = torch.from_numpy(img.copy()).permute(2, 0, 1).float()
         mask_tensor = torch.from_numpy(resized_masks.copy()).float()  # (6, H, W)

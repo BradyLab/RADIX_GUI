@@ -1,6 +1,6 @@
 """Albumentations pipelines for fluorescence microscopy augmentation."""
 
-from typing import Dict, List, Optional, Tuple
+from typing import Tuple
 
 import albumentations as A
 import numpy as np
@@ -27,37 +27,53 @@ def get_train_transform(
             scale=(0.7, 1.3),
             rotate=(-45, 45),
             shear=(-10, 10),
-            border_mode=0, p=0.7,
+            border_mode=0,
+            p=0.7,
         ),
         A.ElasticTransform(
-            alpha=120, sigma=12, border_mode=0, p=0.3,
+            alpha=120,
+            sigma=12,
+            border_mode=0,
+            p=0.3,
         ),
         A.RandomBrightnessContrast(
-            brightness_limit=0.3, contrast_limit=0.3, p=0.6,
+            brightness_limit=0.3,
+            contrast_limit=0.3,
+            p=0.6,
         ),
         A.GaussianBlur(blur_limit=(3, 7), p=0.2),
         A.GaussNoise(std_range=(0.01, 0.08), p=0.4),
         A.RandomGamma(gamma_limit=(70, 150), p=0.3),
     ]
     if p_hue_sat > 0:
-        transforms.append(A.HueSaturationValue(
-            hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=p_hue_sat,
-        ))
-    transforms.extend([
-        A.ChannelDropout(
-            channel_drop_range=(1, 1), p=p_channel_dropout,
-        ),
-        A.ChannelShuffle(p=p_channel_shuffle),
-        A.Resize(img_size, img_size),
-    ])
+        transforms.append(
+            A.HueSaturationValue(
+                hue_shift_limit=20,
+                sat_shift_limit=30,
+                val_shift_limit=20,
+                p=p_hue_sat,
+            )
+        )
+    transforms.extend(
+        [
+            A.ChannelDropout(
+                channel_drop_range=(1, 1),
+                p=p_channel_dropout,
+            ),
+            A.ChannelShuffle(p=p_channel_shuffle),
+            A.Resize(img_size, img_size),
+        ]
+    )
     return A.Compose(transforms)
 
 
 def get_val_transform(img_size: int = 1024) -> A.Compose:
     """Validation/test transform — resize only, no augmentation."""
-    return A.Compose([
-        A.Resize(img_size, img_size),
-    ])
+    return A.Compose(
+        [
+            A.Resize(img_size, img_size),
+        ]
+    )
 
 
 def apply_transform_with_masks(

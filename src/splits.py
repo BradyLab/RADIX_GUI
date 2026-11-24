@@ -3,7 +3,7 @@
 from collections import defaultdict
 from typing import Dict, List, Optional
 
-from .config import TRAIN_DIR, VAL_DIR, TEST_DIR, ONESHOT_DIR, SampleRecord
+from .config import ONESHOT_DIR, TEST_DIR, TRAIN_DIR, VAL_DIR, SampleRecord
 from .dataset import SampleRegistry
 
 MONOCOT_SPECIES = {"Millet", "Rice", "Sorghum"}
@@ -42,7 +42,9 @@ def get_split(
         Dict with "train", "val", "test" lists of SampleRecord.
     """
     if strategy not in STRATEGY_SPECIES:
-        raise ValueError(f"Unknown strategy '{strategy}'. Choose from: {list(STRATEGY_SPECIES.keys())}")
+        raise ValueError(
+            f"Unknown strategy '{strategy}'. Choose from: {list(STRATEGY_SPECIES.keys())}"
+        )
 
     strategy_filter = STRATEGY_SPECIES[strategy]
 
@@ -71,9 +73,9 @@ def print_split_summary(split: Dict[str, List[SampleRecord]]) -> None:
     """Print summary statistics for a split."""
     for subset, samples in split.items():
         print(f"\n{subset.upper()}: {len(samples)} samples")
-        species_counts = defaultdict(int)
-        micro_counts = defaultdict(int)
-        exp_set = set()
+        species_counts: defaultdict[str, int] = defaultdict(int)
+        micro_counts: defaultdict[str, int] = defaultdict(int)
+        exp_set: set = set()
         for s in samples:
             species_counts[s.species] += 1
             micro_counts[s.microscope] += 1

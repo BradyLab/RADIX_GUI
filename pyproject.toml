@@ -1,0 +1,58 @@
+# Tool configuration. (Dependencies live in requirements*.txt; this is not a package.)
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+# Lints and formats everything in the repo.
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "F",  # pyflakes: unused/undefined names, etc.
+    "I",  # import sorting
+    "B",  # flake8-bugbear: likely bugs
+]
+ignore = [
+    "E501",  # line length is the formatter's job; it can't split long strings/comments
+    "B905",  # zip() without strict=: noise for this codebase
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.coverage.run]
+source = ["src", "GUI"]
+# These import torch / albumentations, which the slim CI environment
+# (requirements-ci.txt) deliberately doesn't install, so they can't be measured
+# there. The install-smoke workflow imports them against the full requirements.
+omit = [
+    'src/lightning_module.py',
+    'src/unet_dataset.py',
+    'src/augmentation.py',
+]
+
+[tool.coverage.report]
+# Floor, not a target: a little under the current figure (~48%) so platform
+# noise doesn't fail the build. Ratchet it up as tests are added.
+fail_under = 45
+skip_covered = true
+show_missing = true
+
+[tool.mypy]
+python_version = "3.12"
+files = ["GUI.py", "predict.py", "src", "tests"]
+# These import torch / albumentations, which the slim type-check environment
+# (requirements-typecheck.txt) deliberately doesn't install.
+exclude = [
+    'src/lightning_module\.py',
+    'src/unet_dataset\.py',
+    'src/augmentation\.py',
+]
+# Several third-party packages ship no stubs (cellpose, plotly, ...).
+ignore_missing_imports = true
+# Report errors only for our own files, not for installed libraries.
+follow_imports = "silent"
+# Default mode: checks the bodies of *annotated* functions only. The codebase is
+# mostly unannotated, so this passes today and guards anything typed from now on.
+# To tighten later: check_untyped_defs = true, then disallow_untyped_defs per module.

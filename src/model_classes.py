@@ -10,7 +10,7 @@ Usage:
     bio = cfg.to_bio7(gt, h, w)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Dict, Tuple
 
 import cv2
@@ -23,7 +23,6 @@ from .annotation_utils import (
 )
 from .config import SampleRecord
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Shared: 7 biological classes (the target all models convert to)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -32,30 +31,30 @@ BIO_7_CLASSES = {
     0: "Whole Root",
     1: "Epidermis",
     2: "Exodermis",
-    3: "Cortex",          # includes aerenchyma area
+    3: "Cortex",  # includes aerenchyma area
     4: "Aerenchyma",
     5: "Endodermis",
     6: "Vascular",
 }
 
 BIO_7_COLORS_RGB = {
-    0: (0, 0, 255),       # Whole Root — Blue
-    1: (255, 165, 0),     # Epidermis — Orange
-    2: (0, 255, 255),     # Exodermis — Cyan
-    3: (0, 200, 0),       # Cortex — Dark Green
-    4: (255, 255, 0),     # Aerenchyma — Yellow
-    5: (0, 255, 0),       # Endodermis — Lime
-    6: (255, 0, 0),       # Vascular — Red
+    0: (0, 0, 255),  # Whole Root — Blue
+    1: (255, 165, 0),  # Epidermis — Orange
+    2: (0, 255, 255),  # Exodermis — Cyan
+    3: (0, 200, 0),  # Cortex — Dark Green
+    4: (255, 255, 0),  # Aerenchyma — Yellow
+    5: (0, 255, 0),  # Endodermis — Lime
+    6: (255, 0, 0),  # Vascular — Red
 }
 
 BIO_7_PUB_COLORS = {
-    "Whole Root":  "#0072B2",
-    "Epidermis":   "#E69F00",
-    "Exodermis":   "#56B4E9",
-    "Cortex":      "#009E73",
-    "Aerenchyma":  "#F0E442",
-    "Endodermis":  "#D55E00",
-    "Vascular":    "#CC79A7",
+    "Whole Root": "#0072B2",
+    "Epidermis": "#E69F00",
+    "Exodermis": "#56B4E9",
+    "Cortex": "#009E73",
+    "Aerenchyma": "#F0E442",
+    "Endodermis": "#D55E00",
+    "Vascular": "#CC79A7",
 }
 
 BIO_7_NAMES = [BIO_7_CLASSES[i] for i in range(7)]
@@ -65,6 +64,7 @@ BIO_7_NAMES = [BIO_7_CLASSES[i] for i in range(7)]
 # Shared utilities
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def fill_contours(mask: np.ndarray) -> np.ndarray:
     """Fill external contours to reconstruct filled polygon from ring-like mask.
     No-op on already-filled masks."""
@@ -72,7 +72,7 @@ def fill_contours(mask: np.ndarray) -> np.ndarray:
     if not contours:
         return mask
     filled = np.zeros_like(mask)
-    cv2.drawContours(filled, contours, -1, 1, thickness=cv2.FILLED)
+    cv2.drawContours(filled, contours, -1, (1,), thickness=cv2.FILLED)
     return filled
 
 
@@ -81,8 +81,9 @@ def _sub(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return np.clip(a.astype(np.int8) - b.astype(np.int8), 0, 1).astype(np.uint8)
 
 
-def merge_classes(masks: np.ndarray, labels: np.ndarray,
-                  h: int, w: int, num_classes: int = 6) -> Dict[int, np.ndarray]:
+def merge_classes(
+    masks: np.ndarray, labels: np.ndarray, h: int, w: int, num_classes: int = 6
+) -> Dict[int, np.ndarray]:
     """Merge per-instance masks into one binary mask per class. No post-processing."""
     merged = {}
     for cls_id in range(num_classes):
@@ -94,8 +95,9 @@ def merge_classes(masks: np.ndarray, labels: np.ndarray,
     return merged
 
 
-def get_filled_classes(masks: np.ndarray, labels: np.ndarray,
-                       h: int, w: int, num_classes: int = 6) -> Dict[int, np.ndarray]:
+def get_filled_classes(
+    masks: np.ndarray, labels: np.ndarray, h: int, w: int, num_classes: int = 6
+) -> Dict[int, np.ndarray]:
     """Merge per-instance masks into one filled binary mask per class.
     Applies fill_contours to each merged mask. Used for saving predictions
     (polygon editor, downstream), NOT for IoU computation."""
@@ -105,8 +107,9 @@ def get_filled_classes(masks: np.ndarray, labels: np.ndarray,
     return filled
 
 
-def get_raw_classes(masks: np.ndarray, labels: np.ndarray,
-                    h: int, w: int, num_classes: int = 6) -> Dict[int, np.ndarray]:
+def get_raw_classes(
+    masks: np.ndarray, labels: np.ndarray, h: int, w: int, num_classes: int = 6
+) -> Dict[int, np.ndarray]:
     """Merge per-instance masks into one binary mask per class.
     No contour-fill — keeps ring predictions as-is."""
     raw = {}
@@ -123,14 +126,16 @@ def get_raw_classes(masks: np.ndarray, labels: np.ndarray,
 # ModelClassConfig dataclass
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class ModelClassConfig:
     """Per-model class configuration."""
+
     name: str
     native_classes: Dict[int, str]
     native_colors_rgb: Dict[int, Tuple[int, int, int]]
-    load_gt: Callable      # (sample: SampleRecord, h: int, w: int) -> native GT
-    to_bio7: Callable      # (native_output, h: int, w: int) -> Dict[str, np.ndarray]
+    load_gt: Callable  # (sample: SampleRecord, h: int, w: int) -> native GT
+    to_bio7: Callable  # (native_output, h: int, w: int) -> Dict[str, np.ndarray]
 
     @property
     def num_native_classes(self) -> int:
@@ -151,12 +156,12 @@ YOLO_OVERLAP_FALSE_CLASSES = {
 }
 
 YOLO_OVERLAP_FALSE_COLORS = {
-    0: (0, 0, 255),       # Blue
-    1: (255, 255, 0),     # Yellow
-    2: (0, 255, 0),       # Green
-    3: (255, 0, 0),       # Red
-    4: (255, 128, 0),     # Orange
-    5: (128, 0, 255),     # Purple
+    0: (0, 0, 255),  # Blue
+    1: (255, 255, 0),  # Yellow
+    2: (0, 255, 0),  # Green
+    3: (255, 0, 0),  # Red
+    4: (255, 128, 0),  # Orange
+    5: (128, 0, 255),  # Purple
 }
 
 
@@ -167,8 +172,9 @@ def yolo_overlap_false_load_gt(sample: SampleRecord, h: int, w: int) -> Dict[int
     return get_filled_classes(gt["masks"], gt["labels"], h, w)
 
 
-def yolo_overlap_false_to_bio7(filled: Dict[int, np.ndarray],
-                                h: int, w: int) -> Dict[str, np.ndarray]:
+def yolo_overlap_false_to_bio7(
+    filled: Dict[int, np.ndarray], h: int, w: int
+) -> Dict[str, np.ndarray]:
     """Convert 6 filled polygon masks → 7 bio classes via subtraction.
 
     filled: {0: Whole Root, 1: Aerenchyma, 2: Outer Endo (filled),
@@ -176,12 +182,12 @@ def yolo_overlap_false_to_bio7(filled: Dict[int, np.ndarray],
     """
     return {
         "Whole Root": filled[0],
-        "Epidermis":  _sub(filled[0], filled[4]),        # WR - OuterExo
-        "Exodermis":  _sub(filled[4], filled[5]),        # OuterExo - InnerExo
-        "Cortex":     _sub(filled[5], filled[2]),        # InnerExo - OuterEndo (includes aer area)
+        "Epidermis": _sub(filled[0], filled[4]),  # WR - OuterExo
+        "Exodermis": _sub(filled[4], filled[5]),  # OuterExo - InnerExo
+        "Cortex": _sub(filled[5], filled[2]),  # InnerExo - OuterEndo (includes aer area)
         "Aerenchyma": filled[1],
-        "Endodermis": _sub(filled[2], filled[3]),        # OuterEndo - InnerEndo
-        "Vascular":   filled[3],                         # InnerEndo
+        "Endodermis": _sub(filled[2], filled[3]),  # OuterEndo - InnerEndo
+        "Vascular": filled[3],  # InnerEndo
     }
 
 
@@ -199,12 +205,12 @@ YOLO_OVERLAP_TRUE_CLASSES = {
 }
 
 YOLO_OVERLAP_TRUE_COLORS = {
-    0: (255, 165, 0),     # Epidermis — Orange
-    1: (255, 255, 0),     # Aerenchyma — Yellow
-    2: (0, 255, 0),       # Endodermis — Green
-    3: (255, 0, 0),       # Vascular — Red
-    4: (0, 255, 255),     # Exodermis — Cyan
-    5: (0, 200, 0),       # Cortex — Dark Green
+    0: (255, 165, 0),  # Epidermis — Orange
+    1: (255, 255, 0),  # Aerenchyma — Yellow
+    2: (0, 255, 0),  # Endodermis — Green
+    3: (255, 0, 0),  # Vascular — Red
+    4: (0, 255, 255),  # Exodermis — Cyan
+    5: (0, 200, 0),  # Cortex — Dark Green
 }
 
 
@@ -223,25 +229,25 @@ def yolo_overlap_true_load_gt(sample: SampleRecord, h: int, w: int) -> Dict[int,
     gt = load_sample_annotations(sample, h, w, raw_classes=True)
     filled = get_filled_classes(gt["masks"], gt["labels"], h, w)
     return {
-        0: _sub(filled[0], filled[4]),                          # Epidermis
-        1: filled[1],                                           # Aerenchyma
-        2: _sub(filled[2], filled[3]),                          # Endodermis ring
-        3: filled[3],                                           # Vascular
-        4: _sub(filled[4], filled[5]),                          # Exodermis ring
-        5: _sub(_sub(filled[5], filled[2]), filled[1]),         # Cortex (excl. aer)
+        0: _sub(filled[0], filled[4]),  # Epidermis
+        1: filled[1],  # Aerenchyma
+        2: _sub(filled[2], filled[3]),  # Endodermis ring
+        3: filled[3],  # Vascular
+        4: _sub(filled[4], filled[5]),  # Exodermis ring
+        5: _sub(_sub(filled[5], filled[2]), filled[1]),  # Cortex (excl. aer)
     }
 
 
-def yolo_overlap_true_to_bio7(rings: Dict[int, np.ndarray],
-                               h: int, w: int) -> Dict[str, np.ndarray]:
+def yolo_overlap_true_to_bio7(
+    rings: Dict[int, np.ndarray], h: int, w: int
+) -> Dict[str, np.ndarray]:
     """Convert 6 ring predictions → 7 bio classes.
 
     rings: {0: Epidermis, 1: Aerenchyma, 2: Endodermis ring,
             3: Vascular, 4: Exodermis ring, 5: Cortex (excl. aer)}
     """
     # Cortex = cortex_excl_aer + aerenchyma (add aerenchyma back)
-    cortex = np.clip(rings[5].astype(np.uint8) + rings[1].astype(np.uint8),
-                     0, 1).astype(np.uint8)
+    cortex = np.clip(rings[5].astype(np.uint8) + rings[1].astype(np.uint8), 0, 1).astype(np.uint8)
 
     # Whole Root = union of all regions
     wr = np.zeros_like(rings[0])
@@ -250,12 +256,12 @@ def yolo_overlap_true_to_bio7(rings: Dict[int, np.ndarray],
 
     return {
         "Whole Root": wr.astype(np.uint8),
-        "Epidermis":  rings[0],
-        "Exodermis":  rings[4],
-        "Cortex":     cortex,
+        "Epidermis": rings[0],
+        "Exodermis": rings[4],
+        "Cortex": cortex,
         "Aerenchyma": rings[1],
         "Endodermis": rings[2],
-        "Vascular":   rings[3],
+        "Vascular": rings[3],
     }
 
 
@@ -274,13 +280,13 @@ UNET_SEMANTIC_CLASSES = {
 }
 
 UNET_SEMANTIC_COLORS = {
-    0: (0, 0, 0),         # Background — Black
-    1: (255, 165, 0),     # Epidermis — Orange
-    2: (255, 255, 0),     # Aerenchyma — Yellow
-    3: (0, 255, 0),       # Endodermis — Green
-    4: (255, 0, 0),       # Vascular — Red
-    5: (0, 255, 255),     # Exodermis — Cyan
-    6: (0, 200, 0),       # Cortex — Dark Green
+    0: (0, 0, 0),  # Background — Black
+    1: (255, 165, 0),  # Epidermis — Orange
+    2: (255, 255, 0),  # Aerenchyma — Yellow
+    3: (0, 255, 0),  # Endodermis — Green
+    4: (255, 0, 0),  # Vascular — Red
+    5: (0, 255, 255),  # Exodermis — Cyan
+    6: (0, 200, 0),  # Cortex — Dark Green
 }
 
 
@@ -291,8 +297,7 @@ def unet_semantic_load_gt(sample: SampleRecord, h: int, w: int) -> np.ndarray:
     return polygons_to_raw_semantic_mask(anns, h, w)
 
 
-def unet_semantic_to_bio7(sem_mask: np.ndarray,
-                           h: int, w: int) -> Dict[str, np.ndarray]:
+def unet_semantic_to_bio7(sem_mask: np.ndarray, h: int, w: int) -> Dict[str, np.ndarray]:
     """Convert 7-class semantic mask → 7 bio classes.
 
     Semantic labels: 0=bg, 1=epidermis, 2=aerenchyma, 3=endodermis,
@@ -302,13 +307,14 @@ def unet_semantic_to_bio7(sem_mask: np.ndarray,
     """
     return {
         "Whole Root": (sem_mask >= 1).astype(np.uint8),
-        "Epidermis":  (sem_mask == 1).astype(np.uint8),
-        "Exodermis":  (sem_mask == 5).astype(np.uint8),
-        "Cortex":     np.clip((sem_mask == 6).astype(np.uint8) +
-                              (sem_mask == 2).astype(np.uint8), 0, 1),
+        "Epidermis": (sem_mask == 1).astype(np.uint8),
+        "Exodermis": (sem_mask == 5).astype(np.uint8),
+        "Cortex": np.clip(
+            (sem_mask == 6).astype(np.uint8) + (sem_mask == 2).astype(np.uint8), 0, 1
+        ),
         "Aerenchyma": (sem_mask == 2).astype(np.uint8),
         "Endodermis": (sem_mask == 3).astype(np.uint8),
-        "Vascular":   (sem_mask == 4).astype(np.uint8),
+        "Vascular": (sem_mask == 4).astype(np.uint8),
     }
 
 
@@ -326,12 +332,12 @@ UNET_MULTILABEL_CLASSES = {
 }
 
 UNET_MULTILABEL_COLORS = {
-    0: (0, 0, 255),       # Blue
-    1: (255, 255, 0),     # Yellow
-    2: (0, 255, 0),       # Green
-    3: (255, 0, 0),       # Red
-    4: (255, 128, 0),     # Orange
-    5: (128, 0, 255),     # Purple
+    0: (0, 0, 255),  # Blue
+    1: (255, 255, 0),  # Yellow
+    2: (0, 255, 0),  # Green
+    3: (255, 0, 0),  # Red
+    4: (255, 128, 0),  # Orange
+    5: (128, 0, 255),  # Purple
 }
 
 
@@ -352,8 +358,7 @@ def unet_multilabel_load_gt(sample: SampleRecord, h: int, w: int) -> Dict[int, n
     return filled
 
 
-def unet_multilabel_to_bio7(filled: Dict[int, np.ndarray],
-                             h: int, w: int) -> Dict[str, np.ndarray]:
+def unet_multilabel_to_bio7(filled: Dict[int, np.ndarray], h: int, w: int) -> Dict[str, np.ndarray]:
     """Convert 6 filled sigmoid channel masks → 7 bio classes via subtraction.
 
     filled: {0: Whole Root, 1: Aerenchyma, 2: Outer Endo (filled),
@@ -364,12 +369,12 @@ def unet_multilabel_to_bio7(filled: Dict[int, np.ndarray],
     """
     return {
         "Whole Root": filled[0],
-        "Epidermis":  _sub(filled[0], filled[4]),        # WR - OuterExo
-        "Exodermis":  _sub(filled[4], filled[5]),        # OuterExo - InnerExo
-        "Cortex":     _sub(filled[5], filled[2]),        # InnerExo - OuterEndo (includes aer area)
+        "Epidermis": _sub(filled[0], filled[4]),  # WR - OuterExo
+        "Exodermis": _sub(filled[4], filled[5]),  # OuterExo - InnerExo
+        "Cortex": _sub(filled[5], filled[2]),  # InnerExo - OuterEndo (includes aer area)
         "Aerenchyma": filled[1],
-        "Endodermis": _sub(filled[2], filled[3]),        # OuterEndo - InnerEndo
-        "Vascular":   filled[3],                         # InnerEndo
+        "Endodermis": _sub(filled[2], filled[3]),  # OuterEndo - InnerEndo
+        "Vascular": filled[3],  # InnerEndo
     }
 
 

@@ -1,23 +1,28 @@
 """Deployment inference: DINOv2+DPT on 3-channel microscopy samples."""
 
+import argparse
 import csv
 import sys
-import argparse
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cv2
+import matplotlib
 import numpy as np
 import tifffile
 import torch
-import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from src.config import load_channel_aliases_file, set_channel_aliases
+from src.io_utils import is_segmentable, match_channel_file
 from src.lightning_module import TimmSemanticModule
 from src.model_classes import (
+    BIO_7_COLORS_RGB,
+    BIO_7_NAMES,
     unet_semantic_to_bio7,
-    BIO_7_NAMES, BIO_7_COLORS_RGB,
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -34,12 +39,6 @@ SAVE_VIS = True
 
 IMG_SIZE = 1024
 CHANNEL_NAMES = ["TRITC", "FITC", "DAPI"]
-
-CHANNEL_ALIASES = {
-    "FITC": ["FITC", "GFP"],
-    "TRITC": ["TRITC", "RFP"],
-    "DAPI": ["DAPI", "CW", "CALCOFLUOR"],
-}
 
 MEASURED_REGIONS = ["Epidermis", "Exodermis", "Endodermis", "Cortex", "Vascular"]
 CROP_MARGIN_PCT = 0.05
@@ -70,43 +69,25 @@ def discover_samples(data_dir: Path):
         if not sub.is_dir() or sub.name.startswith("."):
             continue
 
-        all_tifs = []
+        all_tifs: list[Path] = []
         for ext in tif_exts:
             all_tifs.extend(sub.glob(ext))
 
         channels = {}
 
         for ch in CHANNEL_NAMES:
-            aliases = CHANNEL_ALIASES.get(ch.upper(), [ch])
-            found = None
-
-            for alias in aliases:
-                alias_low = alias.lower()
-                tokens = (
-                    f"_{alias_low}.",
-                    f"_{alias_low}_",
-                    f"({alias_low})",
-                    f"-{alias_low}-",
-                    f"-{alias_low}.",
-                )
-
-                for f in all_tifs:
-                    fname = f.name.lower()
-                    if any(tok in fname for tok in tokens):
-                        found = f
-                        break
-
-                if found is not None:
-                    break
+            found = match_channel_file(all_tifs, ch)
 
             if found is not None:
                 channels[ch] = found
 
-        if len(channels) == 3:
+        absent = [ch for ch in CHANNEL_NAMES if ch not in channels]
+        if is_segmentable(all_tifs, CHANNEL_NAMES):
+            if absent:
+                print(f"  [note] {sub.name}: missing {absent}; zero-filling for segmentation")
             samples.append((sub.name, channels))
         else:
-            missing = set(CHANNEL_NAMES) - set(channels)
-            print(f"  [skip] {sub.name}: missing channels {missing}")
+            print(f"  [skip] {sub.name}: missing channels {absent}")
 
     return samples
 
@@ -119,8 +100,14 @@ def load_channel(path: Path) -> np.ndarray:
 
 
 def load_sample_3ch(channels: dict):
-    stacks = [load_channel(channels[ch]) for ch in CHANNEL_NAMES]
-    return np.stack(stacks, axis=-1)
+    """Stack channels in CHANNEL_NAMES order; absent channels become zeros.
+
+    Zeros match the model's channel-dropout training. normalize_percentile maps
+    a constant channel to 0, so the zero fill survives normalization.
+    """
+    loaded = {ch: load_channel(channels[ch]) for ch in CHANNEL_NAMES if ch in channels}
+    ref = next(iter(loaded.values()))
+    return np.stack([loaded.get(ch, np.zeros_like(ref)) for ch in CHANNEL_NAMES], axis=-1)
 
 
 def normalize_percentile(img: np.ndarray, p_low=1.0, p_high=99.5):
@@ -228,7 +215,9 @@ def save_vis(rgb_u8, bio7, sample_name, out_path):
     plt.close(fig)
 
 
-def measure(sample_name: str, raw_img: np.ndarray, bio7: dict) -> dict:
+def measure(sample_name: str, raw_img: np.ndarray, bio7: dict, imputed: tuple | list = ()) -> dict:
+    """Per-region mean intensities. Channels in ``imputed`` were zero-filled, so
+    their intensities are NaN rather than a fake 0."""
     h, w = raw_img.shape[:2]
     mh, mw = bio7["Whole Root"].shape[:2]
 
@@ -242,6 +231,7 @@ def measure(sample_name: str, raw_img: np.ndarray, bio7: dict) -> dict:
     row = {
         "sample_id": sample_name,
         "aerenchyma_ratio": aer_ratio,
+        "imputed_channels": ";".join(imputed),
     }
 
     ch_idx = {"TRITC": 0, "FITC": 1, "DAPI": 2}
@@ -254,6 +244,9 @@ def measure(sample_name: str, raw_img: np.ndarray, bio7: dict) -> dict:
             mask = mask & ~(bio7["Aerenchyma"] > 0)
 
         for ch in ("DAPI", "FITC", "TRITC"):
+            if ch in imputed:
+                row[f"{region.lower()}_{ch}"] = float("nan")
+                continue
             channel_img = raw_img[..., ch_idx[ch]]
             val = float(channel_img[mask].mean()) if mask.any() else 0.0
             row[f"{region.lower()}_{ch}"] = val
@@ -295,6 +288,14 @@ def parse_args():
         help="Optional maximum number of samples to process.",
     )
 
+    for ch in ("dapi", "fitc", "tritc"):
+        parser.add_argument(
+            f"--{ch}-name",
+            default=None,
+            help=f"Extra filename keyword(s) identifying the {ch.upper()} TIFF, "
+            "comma-separated (e.g. 'cell_wall'). Added to the built-in names.",
+        )
+
     return parser.parse_args()
 
 
@@ -302,6 +303,15 @@ def main():
     args = parse_args()
 
     data_dir = Path(args.data_dir).resolve()
+
+    # channel_names.json (in data dir or its parent) first, then CLI flags on top
+    aliases = load_channel_aliases_file(data_dir)
+    for ch in ("DAPI", "FITC", "TRITC"):
+        cli = getattr(args, f"{ch.lower()}_name")
+        if cli:
+            aliases.setdefault(ch, [])
+            aliases[ch] = [s.strip() for s in cli.split(",") if s.strip()] + aliases[ch]
+    set_channel_aliases(aliases)
     model_dir = Path(args.model_dir).resolve()
     out_dir = Path(args.output_dir).resolve()
 
@@ -310,7 +320,13 @@ def main():
     (out_dir / "predictions").mkdir(parents=True, exist_ok=True)
     (out_dir / "vis").mkdir(parents=True, exist_ok=True)
 
-    device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    device = (
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
     print(f"Device: {device}")
 
     ckpt = find_checkpoint(model_dir)
@@ -372,16 +388,12 @@ def main():
         bio7_full = unet_semantic_to_bio7(sem_full, *sem_full.shape)
 
         if save_visualizations:
-            save_vis(
-                to_uint8(norm),
-                bio7_full,
-                sample_name,
-                out_dir / "vis" / f"{sample_name}.png"
-            )
+            save_vis(to_uint8(norm), bio7_full, sample_name, out_dir / "vis" / f"{sample_name}.png")
 
-        rows.append(measure(sample_name, raw_crop, bio7_crop))
+        imputed = [ch for ch in CHANNEL_NAMES if ch not in channels]
+        rows.append(measure(sample_name, raw_crop, bio7_crop, imputed))
 
-    cols = ["sample_id", "aerenchyma_ratio"]
+    cols = ["sample_id", "aerenchyma_ratio", "imputed_channels"]
 
     for region in MEASURED_REGIONS:
         for ch in ("DAPI", "FITC", "TRITC"):

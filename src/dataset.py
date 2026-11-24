@@ -67,14 +67,18 @@ class SampleRegistry:
                 if self._require_annotations and not has_annotation:
                     continue
 
-                self.samples.append(SampleRecord(
-                    species=species,
-                    microscope=microscope,
-                    experiment=experiment,
-                    sample_name=sample_name,
-                    image_dir=full_path,
-                    annotation_path=annotation_dir / annotation_name if has_annotation else None,
-                ))
+                self.samples.append(
+                    SampleRecord(
+                        species=species,
+                        microscope=microscope,
+                        experiment=experiment,
+                        sample_name=sample_name,
+                        image_dir=full_path,
+                        annotation_path=annotation_dir / annotation_name
+                        if has_annotation
+                        else None,
+                    )
+                )
 
         # Sort for deterministic ordering
         self.samples.sort(key=lambda s: s.uid)

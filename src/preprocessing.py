@@ -9,12 +9,13 @@ import cv2
 import numpy as np
 import tifffile
 
-from .config import CHANNELS, OUTPUT_DIR, SampleRecord
+from .config import OUTPUT_DIR, SampleRecord
 
 
 @dataclass
 class PadMeta:
     """Metadata for reversing resize + padding."""
+
     original_h: int
     original_w: int
     scale: float
@@ -111,9 +112,13 @@ def resize_with_padding(
     padded_img[:new_h, :new_w] = resized_img
 
     meta = PadMeta(
-        original_h=h, original_w=w,
-        scale=scale, scaled_h=new_h, scaled_w=new_w,
-        pad_bottom=pad_bottom, pad_right=pad_right,
+        original_h=h,
+        original_w=w,
+        scale=scale,
+        scaled_h=new_h,
+        scaled_w=new_w,
+        pad_bottom=pad_bottom,
+        pad_right=pad_right,
         target_size=target_size,
     )
 
@@ -123,7 +128,8 @@ def resize_with_padding(
         resized_masks = np.zeros((n, target_size, target_size), dtype=masks.dtype)
         for i in range(n):
             m = cv2.resize(
-                masks[i].astype(np.uint8), (new_w, new_h),
+                masks[i].astype(np.uint8),
+                (new_w, new_h),
                 interpolation=cv2.INTER_NEAREST,
             )
             resized_masks[i, :new_h, :new_w] = m
@@ -145,17 +151,19 @@ def unpad_predictions(
         Prediction resized to (original_h, original_w).
     """
     if pred.ndim == 2:
-        cropped = pred[:meta.scaled_h, :meta.scaled_w]
+        cropped = pred[: meta.scaled_h, : meta.scaled_w]
         return cv2.resize(
-            cropped.astype(np.uint8), (meta.original_w, meta.original_h),
+            cropped.astype(np.uint8),
+            (meta.original_w, meta.original_h),
             interpolation=cv2.INTER_NEAREST,
         )
     else:
         result = []
         for i in range(pred.shape[0]):
-            cropped = pred[i, :meta.scaled_h, :meta.scaled_w]
+            cropped = pred[i, : meta.scaled_h, : meta.scaled_w]
             r = cv2.resize(
-                cropped.astype(np.uint8), (meta.original_w, meta.original_h),
+                cropped.astype(np.uint8),
+                (meta.original_w, meta.original_h),
                 interpolation=cv2.INTER_NEAREST,
             )
             result.append(r)

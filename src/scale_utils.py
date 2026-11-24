@@ -33,10 +33,10 @@ Optional: physical scaling when microscope resolution is known
     scale = compute_root_scale(bio7, um_per_pixel=0.32)
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 import numpy as np
 from skimage.measure import label, regionprops
-
 
 # -----------------------------------------------------------------------------
 # Tunable constants
@@ -61,6 +61,7 @@ MIN_ROOT_DIAMETER_PX = 100.0
 # -----------------------------------------------------------------------------
 # Core API
 # -----------------------------------------------------------------------------
+
 
 def compute_root_scale(
     bio7: Dict[str, np.ndarray],
@@ -116,23 +117,27 @@ def compute_root_scale(
     root_diameter_px = float(max(MIN_ROOT_DIAMETER_PX, main.equivalent_diameter))
 
     if um_per_pixel is not None and um_per_pixel > 0:
-        cell_scale_px = float(max(
-            MIN_CELL_SCALE_PX,
-            typical_cell_um / um_per_pixel,
-        ))
+        cell_scale_px = float(
+            max(
+                MIN_CELL_SCALE_PX,
+                typical_cell_um / um_per_pixel,
+            )
+        )
         source = "physical"
     else:
-        cell_scale_px = float(max(
-            MIN_CELL_SCALE_PX,
-            DEFAULT_CELL_FRACTION_OF_ROOT * root_diameter_px,
-        ))
+        cell_scale_px = float(
+            max(
+                MIN_CELL_SCALE_PX,
+                DEFAULT_CELL_FRACTION_OF_ROOT * root_diameter_px,
+            )
+        )
         source = "root_geometry"
 
     return {
         "root_diameter_px": root_diameter_px,
-        "cell_scale_px":    cell_scale_px,
-        "source":           source,
-        "valid":            True,
+        "cell_scale_px": cell_scale_px,
+        "source": source,
+        "valid": True,
     }
 
 
@@ -154,10 +159,10 @@ def scaled_ring_defaults(scale: Dict[str, Any]) -> Dict[str, int]:
     cs = float(scale["cell_scale_px"])
 
     return {
-        "peak_distance":  int(max(3, round(0.45 * cs))),
-        "ring_width":     int(max(2, round(0.30 * cs))),
+        "peak_distance": int(max(3, round(0.45 * cs))),
+        "ring_width": int(max(2, round(0.30 * cs))),
         "merge_distance": int(max(4, round(1.10 * cs))),
-        "peak_width":     int(max(1, round(0.15 * cs))),
+        "peak_width": int(max(1, round(0.15 * cs))),
     }
 
 
@@ -178,12 +183,12 @@ def scaled_blob_defaults(scale: Dict[str, Any]) -> Dict[str, int]:
 
     return {
         # ~ half a typical cell area; reject sub-cellular specks
-        "min_area":     int(max(20,   round(0.5 * cell_area_px))),
+        "min_area": int(max(20, round(0.5 * cell_area_px))),
         # ~ 80x typical cell area; allows large xylem lumens but rejects
         # whole-tissue blobs
-        "max_area":     int(max(2000, round(80.0 * cell_area_px))),
+        "max_area": int(max(2000, round(80.0 * cell_area_px))),
         # min spacing between watershed markers
-        "min_distance": int(max(3,    round(0.5 * cs))),
+        "min_distance": int(max(3, round(0.5 * cs))),
     }
 
 
@@ -207,10 +212,11 @@ def describe_scale(scale: Dict[str, Any]) -> str:
 # Internals
 # -----------------------------------------------------------------------------
 
+
 def _fallback_scale(reason: str) -> Dict[str, Any]:
     return {
         "root_diameter_px": MIN_ROOT_DIAMETER_PX,
-        "cell_scale_px":    MIN_CELL_SCALE_PX,
-        "source":           reason,
-        "valid":            False,
+        "cell_scale_px": MIN_CELL_SCALE_PX,
+        "source": reason,
+        "valid": False,
     }

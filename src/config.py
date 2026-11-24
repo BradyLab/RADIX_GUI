@@ -1,9 +1,8 @@
 """Project configuration: paths, class definitions, training defaults."""
 
 import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
 
 import yaml
 
@@ -24,6 +23,69 @@ OUTPUT_DIR = BASE_DIR / "output"  # training runs, exports, checkpoints
 SPECIES = ["Millet", "Rice", "Sorghum", "Tomato"]
 MICROSCOPES = ["C10", "Olympus", "Zeiss"]
 CHANNELS = ["DAPI", "FITC", "TRITC"]  # Blue, Green, Red
+# The model was trained with single-channel dropout (zero-filled), so a sample
+# missing at most this many channels is still segmented (missing -> zeros).
+MAX_MISSING_CHANNELS = 1
+
+# Filename keywords that identify each channel's TIFF (matched case-insensitively
+# between separators, e.g. "_cw.", "_gfp_", "(rfp)"). Users can add their own via
+# set_channel_aliases() / a channel_names.json file; user entries are additive.
+DEFAULT_CHANNEL_ALIASES = {
+    "FITC": ["FITC", "GFP"],
+    "TRITC": ["TRITC", "RFP"],
+    "DAPI": ["DAPI", "CW", "CALCOFLUOR"],
+}
+CHANNEL_NAMES_FILE = "channel_names.json"
+_user_channel_aliases: dict[str, list[str]] = {}
+
+
+def _clean_aliases(value) -> list[str]:
+    if isinstance(value, str):
+        value = value.split(",")
+    return [str(v).strip() for v in (value or []) if str(v).strip()]
+
+
+def set_channel_aliases(overrides: dict | None) -> None:
+    """Replace the user-defined channel keywords (e.g. {"DAPI": "cell_wall"}).
+
+    Keys are the canonical channel names (DAPI/FITC/TRITC); values are a string
+    (comma-separated allowed) or a list. Pass None/{} to clear.
+    """
+    _user_channel_aliases.clear()
+    for ch, val in (overrides or {}).items():
+        names = _clean_aliases(val)
+        if names:
+            _user_channel_aliases[ch.upper()] = names
+
+
+def get_channel_aliases(channel: str) -> list[str]:
+    """User keywords first, then the built-in defaults for ``channel``."""
+    key = channel.upper()
+    out: list[str] = []
+    for a in _user_channel_aliases.get(key, []) + DEFAULT_CHANNEL_ALIASES.get(key, [channel]):
+        if a.lower() not in (x.lower() for x in out):
+            out.append(a)
+    return out
+
+
+def get_user_channel_aliases() -> dict[str, list[str]]:
+    return {k: list(v) for k, v in _user_channel_aliases.items()}
+
+
+def load_channel_aliases_file(folder: Path) -> dict[str, list[str]]:
+    """Read ``channel_names.json`` from ``folder`` (or its parent); {} if absent/invalid."""
+    import json
+
+    for d in (Path(folder), Path(folder).parent):
+        f = d / CHANNEL_NAMES_FILE
+        if f.is_file():
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                return {k.upper(): _clean_aliases(v) for k, v in data.items()}
+            except (OSError, ValueError, AttributeError):
+                return {}
+    return {}
+
 
 # ── Annotated classes (as stored in .txt files) ───────────────────────────────
 ANNOTATED_CLASSES = {
@@ -39,19 +101,20 @@ ANNOTATED_CLASSES = {
 TARGET_CLASSES = {
     0: "Whole Root",
     1: "Aerenchyma",
-    2: "Endodermis",   # ring: outer - inner
-    3: "Vascular",     # area inside inner endodermis
+    2: "Endodermis",  # ring: outer - inner
+    3: "Vascular",  # area inside inner endodermis
 }
 
 TARGET_CLASSES_5 = {
     0: "Whole Root",
     1: "Aerenchyma",
-    2: "Endodermis",   # ring: outer - inner
-    3: "Vascular",     # area inside inner endodermis
-    4: "Exodermis",    # ring: outer - inner (tomato only)
+    2: "Endodermis",  # ring: outer - inner
+    3: "Vascular",  # area inside inner endodermis
+    4: "Exodermis",  # ring: outer - inner (tomato only)
 }
 
 NUM_CLASSES = len(TARGET_CLASSES_5)
+
 
 def get_target_classes(num_classes: int = 5) -> dict:
     """Return class dict by count. For model-specific lookup, use MODEL_REGISTRY in src.model_classes."""
@@ -63,30 +126,30 @@ def get_target_classes(num_classes: int = 5) -> dict:
 # Which target classes are valid (annotated) per species.
 # All species now have complete annotations for all 5 target classes.
 SPECIES_VALID_CLASSES = {
-    "Millet":  {0, 1, 2, 3, 4},
-    "Rice":    {0, 1, 2, 3, 4},
+    "Millet": {0, 1, 2, 3, 4},
+    "Rice": {0, 1, 2, 3, 4},
     "Sorghum": {0, 1, 2, 3, 4},
-    "Tomato":  {0, 1, 2, 3, 4},
+    "Tomato": {0, 1, 2, 3, 4},
 }
 
 # ── Visualization colors (BGR for OpenCV, RGB for matplotlib) ─────────────────
 # Colors for *annotated* classes (as stored in .txt files)
 CLASS_COLORS_RGB = {
-    0: (0, 0, 255),      # Whole Root — Blue
-    1: (255, 255, 0),     # Aerenchyma — Yellow
-    2: (0, 255, 0),       # Outer Endodermis — Green
-    3: (255, 0, 0),       # Inner Endodermis — Red
-    4: (255, 128, 0),     # Outer Exodermis — Orange
-    5: (128, 0, 255),     # Inner Exodermis — Purple
+    0: (0, 0, 255),  # Whole Root — Blue
+    1: (255, 255, 0),  # Aerenchyma — Yellow
+    2: (0, 255, 0),  # Outer Endodermis — Green
+    3: (255, 0, 0),  # Inner Endodermis — Red
+    4: (255, 128, 0),  # Outer Exodermis — Orange
+    5: (128, 0, 255),  # Inner Exodermis — Purple
 }
 
 # Colors for *target* classes (derived semantic regions for model training)
 TARGET_CLASS_COLORS_RGB = {
-    0: (0, 0, 255),      # Whole Root — Blue
-    1: (255, 255, 0),     # Aerenchyma — Yellow
-    2: (0, 255, 0),       # Endodermis — Green
-    3: (255, 0, 0),       # Vascular — Red
-    4: (0, 255, 255),     # Exodermis — Cyan
+    0: (0, 0, 255),  # Whole Root — Blue
+    1: (255, 255, 0),  # Aerenchyma — Yellow
+    2: (0, 255, 0),  # Endodermis — Green
+    3: (255, 0, 0),  # Vascular — Red
+    4: (0, 255, 255),  # Exodermis — Cyan
 }
 
 # ── Training defaults ─────────────────────────────────────────────────────────
@@ -101,6 +164,7 @@ DEFAULT_BACKBONE_LR = 1e-5
 @dataclass
 class SampleRecord:
     """Metadata for a single annotated sample."""
+
     species: str
     microscope: str
     experiment: str
