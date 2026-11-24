@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import tifffile as tiff
 
+from src.config import get_channel_aliases
 from src.mask_utils import resize_bio7_to_raw
 from src.model_classes import unet_semantic_to_bio7
 
@@ -13,11 +14,22 @@ _SPECIES_KEYWORDS = [
     ("tomato", "Tomato"),
 ]
 
-CHANNEL_ALIASES = {
-    "FITC": ["FITC", "GFP"],
-    "TRITC": ["TRITC", "RFP"],
-    "DAPI": ["DAPI", "CW", "CALCOFLUOR"],
-}
+
+def match_channel_file(files, channel):
+    """Return the first file (sorted) whose name carries a keyword for ``channel``.
+
+    Keywords come from config.get_channel_aliases (user-defined first, then
+    defaults). Returns None if nothing matches.
+    """
+    files = sorted(files)
+    for alias in get_channel_aliases(channel):
+        a = alias.lower()
+        tokens = (f"_{a}.", f"_{a}_", f"({a})", f"-{a}-", f"-{a}.")
+        for f in files:
+            name = Path(f).name.lower()
+            if any(tok in name for tok in tokens):
+                return f
+    return None
 
 
 def load_raw_tiff_sample(sample_name, data_dir, channels):
@@ -32,33 +44,17 @@ def load_raw_tiff_sample(sample_name, data_dir, channels):
         matches = [p for p in data_dir.iterdir() if p.is_dir() and p.name == sample_name]
         search_root = matches[0] if matches else data_dir
 
+    all_tifs = list(search_root.rglob("*.tif*"))
     for ch in channels:
-        ch_variants = CHANNEL_ALIASES.get(ch.upper(), [ch])
+        match = match_channel_file(all_tifs, ch)
 
-        matches = sorted(
-            [
-                p
-                for p in search_root.rglob("*.tif*")
-                if any(
-                    (
-                        f"_{alias.lower()}." in p.name.lower()
-                        or f"_{alias.lower()}_" in p.name.lower()
-                        or f"({alias.lower()})" in p.name.lower()
-                        or f"-{alias.lower()}-" in p.name.lower()
-                        or f"-{alias.lower()}." in p.name.lower()
-                    )
-                    for alias in ch_variants
-                )
-            ]
-        )
-
-        if not matches:
+        if match is None:
             raise FileNotFoundError(
                 f"Could not find {ch} TIFF for sample '{sample_name}' under {search_root}. "
-                f"Tried aliases: {ch_variants}"
+                f"Tried keywords: {get_channel_aliases(ch)}"
             )
 
-        img = tiff.imread(matches[0])
+        img = tiff.imread(match)
         channel_imgs.append(img)
 
     return np.stack(channel_imgs, axis=-1)

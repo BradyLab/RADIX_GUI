@@ -16,6 +16,8 @@ import torch
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from src.config import load_channel_aliases_file, set_channel_aliases
+from src.io_utils import match_channel_file
 from src.lightning_module import TimmSemanticModule
 from src.model_classes import (
     BIO_7_COLORS_RGB,
@@ -37,12 +39,6 @@ SAVE_VIS = True
 
 IMG_SIZE = 1024
 CHANNEL_NAMES = ["TRITC", "FITC", "DAPI"]
-
-CHANNEL_ALIASES = {
-    "FITC": ["FITC", "GFP"],
-    "TRITC": ["TRITC", "RFP"],
-    "DAPI": ["DAPI", "CW", "CALCOFLUOR"],
-}
 
 MEASURED_REGIONS = ["Epidermis", "Exodermis", "Endodermis", "Cortex", "Vascular"]
 CROP_MARGIN_PCT = 0.05
@@ -80,27 +76,7 @@ def discover_samples(data_dir: Path):
         channels = {}
 
         for ch in CHANNEL_NAMES:
-            aliases = CHANNEL_ALIASES.get(ch.upper(), [ch])
-            found = None
-
-            for alias in aliases:
-                alias_low = alias.lower()
-                tokens = (
-                    f"_{alias_low}.",
-                    f"_{alias_low}_",
-                    f"({alias_low})",
-                    f"-{alias_low}-",
-                    f"-{alias_low}.",
-                )
-
-                for f in all_tifs:
-                    fname = f.name.lower()
-                    if any(tok in fname for tok in tokens):
-                        found = f
-                        break
-
-                if found is not None:
-                    break
+            found = match_channel_file(all_tifs, ch)
 
             if found is not None:
                 channels[ch] = found
@@ -298,6 +274,14 @@ def parse_args():
         help="Optional maximum number of samples to process.",
     )
 
+    for ch in ("dapi", "fitc", "tritc"):
+        parser.add_argument(
+            f"--{ch}-name",
+            default=None,
+            help=f"Extra filename keyword(s) identifying the {ch.upper()} TIFF, "
+            "comma-separated (e.g. 'cell_wall'). Added to the built-in names.",
+        )
+
     return parser.parse_args()
 
 
@@ -305,6 +289,15 @@ def main():
     args = parse_args()
 
     data_dir = Path(args.data_dir).resolve()
+
+    # channel_names.json (in data dir or its parent) first, then CLI flags on top
+    aliases = load_channel_aliases_file(data_dir)
+    for ch in ("DAPI", "FITC", "TRITC"):
+        cli = getattr(args, f"{ch.lower()}_name")
+        if cli:
+            aliases.setdefault(ch, [])
+            aliases[ch] = [s.strip() for s in cli.split(",") if s.strip()] + aliases[ch]
+    set_channel_aliases(aliases)
     model_dir = Path(args.model_dir).resolve()
     out_dir = Path(args.output_dir).resolve()
 
