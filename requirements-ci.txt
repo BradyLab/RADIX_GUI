@@ -1,7 +1,7 @@
 # Minimal dependencies for CI: just what GUI.py and the tests import.
 # The GUI never imports torch/cellpose/etc., so CI skips those multi-GB installs.
 # Versions must match requirements.txt (enforced by tests/test_requirements_sync.py).
-streamlit==1.59.0
+streamlit==1.67.0
 numpy==1.26.4
 pandas==3.0.3
 plotly==6.8.0
@@ -9,7 +9,7 @@ scipy==1.17.1
 scikit-image==0.26.0
 tifffile==2026.3.3
 opencv-python-headless==4.11.0.86
-PyYAML==6.0.3
+PyYAML==6.0.4
 pyarrow==24.0.0
 
 # test tooling
